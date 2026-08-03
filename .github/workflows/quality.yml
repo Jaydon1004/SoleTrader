@@ -50,3 +50,4 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: src-tauri
+          config: src-tauri/audit.toml
