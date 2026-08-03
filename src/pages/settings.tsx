@@ -80,7 +80,11 @@ function PersonalTab({ onDirtyChange }: DirtyTabProps) {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (caught) {
-      setSaveError(caught instanceof Error ? caught.message : "Settings could not be saved.");
+      setSaveError(
+        caught instanceof Error
+          ? caught.message
+          : "Settings could not be saved.",
+      );
     }
   };
 
@@ -370,7 +374,10 @@ function PersonalTab({ onDirtyChange }: DirtyTabProps) {
       </Card>
 
       <div className="sticky bottom-0 z-10 flex items-center justify-between rounded-md border bg-card/95 p-3 shadow-sm backdrop-blur">
-        <span className={`text-sm ${saveError ? "text-destructive" : "text-muted-foreground"}`} role="status">
+        <span
+          className={`text-sm ${saveError ? "text-destructive" : "text-muted-foreground"}`}
+          role="status"
+        >
           {saveError ||
             (saved
               ? "Personal and business settings saved."
@@ -419,7 +426,11 @@ function InvoiceTemplateTab({ onDirtyChange }: DirtyTabProps) {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (caught) {
-      setSaveError(caught instanceof Error ? caught.message : "Invoice settings could not be saved.");
+      setSaveError(
+        caught instanceof Error
+          ? caught.message
+          : "Invoice settings could not be saved.",
+      );
     }
   };
 
@@ -545,7 +556,10 @@ function InvoiceTemplateTab({ onDirtyChange }: DirtyTabProps) {
       </Card>
 
       <div className="sticky bottom-0 z-10 flex items-center justify-between rounded-md border bg-card/95 p-3 shadow-sm backdrop-blur">
-        <span className={`text-sm ${saveError ? "text-destructive" : "text-muted-foreground"}`} role="status">
+        <span
+          className={`text-sm ${saveError ? "text-destructive" : "text-muted-foreground"}`}
+          role="status"
+        >
           {saveError ||
             (saved
               ? "Invoice settings saved."
@@ -824,7 +838,11 @@ function TaxYearTab({ onDirtyChange }: DirtyTabProps) {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (caught) {
-      setSaveError(caught instanceof Error ? caught.message : "Tax year settings could not be saved.");
+      setSaveError(
+        caught instanceof Error
+          ? caught.message
+          : "Tax year settings could not be saved.",
+      );
     }
   };
 
@@ -946,7 +964,10 @@ function TaxYearTab({ onDirtyChange }: DirtyTabProps) {
       ))}
 
       <div className="sticky bottom-0 z-10 flex items-center justify-between rounded-md border bg-card/95 p-3 shadow-sm backdrop-blur">
-        <span className={`text-sm ${saveError ? "text-destructive" : "text-muted-foreground"}`} role="status">
+        <span
+          className={`text-sm ${saveError ? "text-destructive" : "text-muted-foreground"}`}
+          role="status"
+        >
           {saveError ||
             (saved
               ? `${selectedYear} rates saved.`
