@@ -31,9 +31,9 @@ All data is stored in an encrypted SQLite database on your own computer — noth
 
 Download the latest installer from the [**Releases**](../../releases) page:
 
-| File | Use |
-|------|-----|
-| `SoleTrader_x.x.x_x64-setup.exe` | Recommended for most users |
+| File                             | Use                               |
+| -------------------------------- | --------------------------------- |
+| `SoleTrader_x.x.x_x64-setup.exe` | Recommended for most users        |
 | `SoleTrader_x.x.x_x64_en-US.msi` | Managed or enterprise deployments |
 
 **Requirements:** Windows 10 or later (64-bit).
@@ -96,10 +96,10 @@ GitHub Actions builds the installers and creates a release automatically. The ap
 
 Before the release workflow can sign updates, add these two repository secrets in **Settings → Secrets and variables → Actions**:
 
-| Secret | Value |
-|--------|-------|
-| `TAURI_SIGNING_PRIVATE_KEY` | The private key printed when the signing key pair was generated |
-| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Leave blank if no password was set |
+| Secret                               | Value                                                           |
+| ------------------------------------ | --------------------------------------------------------------- |
+| `TAURI_SIGNING_PRIVATE_KEY`          | The private key printed when the signing key pair was generated |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | Leave blank if no password was set                              |
 
 Also replace `YOUR_USERNAME` in `src-tauri/tauri.conf.json` with your actual GitHub username so the auto-updater endpoint points at the right repository.
 

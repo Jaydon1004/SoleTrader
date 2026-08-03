@@ -280,7 +280,9 @@ export function TaxPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             Transparent estimate using your live business records and configured
             HMRC rates.{" "}
-            <span className="text-xs opacity-60">Rates current as of April 2026.</span>
+            <span className="text-xs opacity-60">
+              Rates current as of April 2026.
+            </span>
           </p>
         </div>
         <div className="flex gap-2">

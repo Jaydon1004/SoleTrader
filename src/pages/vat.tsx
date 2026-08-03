@@ -179,7 +179,11 @@ export function VatPage() {
       setSaved(true);
       window.setTimeout(() => setSaved(false), 2000);
     } catch (caught) {
-      setSaveError(caught instanceof Error ? caught.message : "VAT settings could not be saved.");
+      setSaveError(
+        caught instanceof Error
+          ? caught.message
+          : "VAT settings could not be saved.",
+      );
     }
   };
 
@@ -708,7 +712,9 @@ export function VatPage() {
                       : "Save VAT settings"}
                 </Button>
                 {saveError && (
-                  <p className="text-sm text-destructive" role="alert">{saveError}</p>
+                  <p className="text-sm text-destructive" role="alert">
+                    {saveError}
+                  </p>
                 )}
               </CardContent>
             </Card>
