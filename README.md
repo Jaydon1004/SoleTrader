@@ -48,7 +48,7 @@ You'll need [Node.js 20+](https://nodejs.org/) and [Rust stable](https://rustup.
 
 ```bash
 # Clone the repo
-git clone https://github.com/YOUR_USERNAME/SoleTrader.git
+git clone https://github.com/Jaydon1004/SoleTrader.git
 cd SoleTrader
 
 # Install JS dependencies
