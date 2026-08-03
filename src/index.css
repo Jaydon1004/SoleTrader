@@ -1,0 +1,141 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --color-background: hsl(210 25% 97.5%);
+  --color-foreground: hsl(168 24% 12%);
+  --color-card: hsl(0 0% 100%);
+  --color-card-foreground: hsl(168 24% 12%);
+  --color-popover: hsl(0 0% 100%);
+  --color-popover-foreground: hsl(168 24% 12%);
+  --color-primary: hsl(158 72% 30%);
+  --color-primary-foreground: hsl(0 0% 100%);
+  --color-secondary: hsl(210 20% 94%);
+  --color-secondary-foreground: hsl(168 24% 16%);
+  --color-muted: hsl(210 22% 94.5%);
+  --color-muted-foreground: hsl(165 8% 42%);
+  --color-accent: hsl(158 32% 92%);
+  --color-accent-foreground: hsl(158 66% 23%);
+  --color-destructive: hsl(2 68% 48%);
+  --color-destructive-foreground: hsl(0 0% 98%);
+  --color-border: hsl(165 12% 86%);
+  --color-input: hsl(165 12% 81%);
+  --color-ring: hsl(158 72% 34%);
+  --color-chart-1: hsl(158 72% 34%);
+  --color-chart-2: hsl(207 76% 48%);
+  --color-chart-3: hsl(38 90% 50%);
+  --color-chart-4: hsl(268 48% 52%);
+  --color-chart-5: hsl(344 65% 50%);
+  --color-sidebar-background: hsl(168 24% 13%);
+  --color-sidebar-foreground: hsl(155 12% 88%);
+  --color-sidebar-primary: hsl(151 65% 56%);
+  --color-sidebar-primary-foreground: hsl(0 0% 98%);
+  --color-sidebar-accent: hsl(165 20% 20%);
+  --color-sidebar-accent-foreground: hsl(0 0% 100%);
+  --color-sidebar-border: hsl(165 17% 23%);
+  --color-sidebar-ring: hsl(151 65% 56%);
+  --radius: 0.5rem;
+}
+
+@layer base {
+  .dark {
+    --color-background: hsl(168 18% 8%);
+    --color-foreground: hsl(150 10% 94%);
+    --color-card: hsl(168 17% 11%);
+    --color-card-foreground: hsl(150 10% 94%);
+    --color-popover: hsl(168 17% 11%);
+    --color-popover-foreground: hsl(150 10% 94%);
+    --color-primary: hsl(151 60% 50%);
+    --color-primary-foreground: hsl(168 28% 8%);
+    --color-secondary: hsl(168 13% 17%);
+    --color-secondary-foreground: hsl(150 10% 94%);
+    --color-muted: hsl(168 13% 16%);
+    --color-muted-foreground: hsl(160 7% 64%);
+    --color-accent: hsl(162 25% 19%);
+    --color-accent-foreground: hsl(151 55% 70%);
+    --color-destructive: hsl(2 60% 44%);
+    --color-destructive-foreground: hsl(0 0% 98%);
+    --color-border: hsl(165 12% 21%);
+    --color-input: hsl(165 12% 28%);
+    --color-ring: hsl(151 60% 50%);
+    --color-chart-1: hsl(151 60% 50%);
+    --color-chart-2: hsl(205 74% 58%);
+    --color-chart-3: hsl(39 88% 56%);
+    --color-chart-4: hsl(270 58% 66%);
+    --color-chart-5: hsl(344 70% 62%);
+    --color-sidebar-background: hsl(168 24% 7%);
+    --color-sidebar-foreground: hsl(155 12% 88%);
+    --color-sidebar-primary: hsl(151 60% 50%);
+    --color-sidebar-primary-foreground: hsl(0 0% 100%);
+    --color-sidebar-accent: hsl(165 20% 14%);
+    --color-sidebar-accent-foreground: hsl(0 0% 100%);
+    --color-sidebar-border: hsl(165 17% 17%);
+    --color-sidebar-ring: hsl(151 60% 50%);
+  }
+}
+
+@media print {
+  @page {
+    margin: 14mm;
+    size: A4 portrait;
+  }
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  aside,
+  header,
+  nav,
+  button,
+  [role="alert"] {
+    display: none !important;
+  }
+  main {
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+  .report-section {
+    break-inside: avoid;
+  }
+  table {
+    font-size: 10pt;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Source Sans 3", "Segoe UI", sans-serif;
+    font-variant-numeric: proportional-nums;
+    letter-spacing: 0;
+  }
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}

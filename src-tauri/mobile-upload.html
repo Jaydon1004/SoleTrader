@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#153c32">
+  <title>Send a receipt | SoleTrader</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root { font-family: "Segoe UI", ui-sans-serif, system-ui, sans-serif; color: #172c26; background: #f2f5f3; }
+    body { min-height: 100vh; margin: 0; background: #f2f5f3; letter-spacing: 0; }
+    .masthead { background: #153c32; color: #fff; padding: max(18px, env(safe-area-inset-top)) 20px 18px; }
+    .brand { display: flex; max-width: 520px; margin: 0 auto; align-items: center; gap: 12px; }
+    .mark { display: grid; width: 40px; height: 40px; place-items: center; border: 1px solid #58c890; border-radius: 6px; background: #1f5948; color: #8be0ad; font-size: 17px; font-weight: 800; }
+    .brand-name { margin: 0; font-size: 20px; font-weight: 750; }
+    .brand-detail { margin: 1px 0 0; color: #b7d1c7; font-size: 12px; }
+    main { width: min(100%, 520px); margin: 0 auto; padding: 32px 20px calc(28px + env(safe-area-inset-bottom)); }
+    h1 { margin: 0; font-size: 28px; line-height: 1.15; }
+    .intro { margin: 10px 0 26px; color: #5c6d67; font-size: 16px; line-height: 1.5; }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .choice { display: flex; min-height: 92px; cursor: pointer; flex-direction: column; align-items: center; justify-content: center; gap: 7px; border: 1px solid #c9d4ce; border-radius: 8px; background: #fff; color: #173d32; font-weight: 700; text-align: center; }
+    .choice:first-child { border-color: #168550; background: #e7f5ec; }
+    .choice:active { transform: translateY(1px); }
+    .choice-icon { font-size: 23px; line-height: 1; }
+    input[type=file] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+    .selection { display: none; margin-top: 18px; overflow: hidden; border: 1px solid #c9d4ce; border-radius: 8px; background: #fff; }
+    .selection.visible { display: block; }
+    .preview { display: grid; min-height: 170px; max-height: 300px; place-items: center; overflow: hidden; background: #e7ece9; }
+    .preview img { display: block; width: 100%; max-height: 300px; object-fit: contain; }
+    .preview-fallback { display: none; padding: 36px 20px; color: #65756f; text-align: center; }
+    .file-row { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 14px; }
+    .file-copy { min-width: 0; }
+    .file-name { margin: 0; overflow: hidden; font-size: 14px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+    .file-size { margin: 2px 0 0; color: #71807a; font-size: 12px; }
+    .clear { flex: none; border: 0; background: transparent; color: #8c332d; font: inherit; font-size: 13px; font-weight: 700; }
+    .send { width: 100%; margin-top: 18px; border: 0; border-radius: 7px; padding: 15px 18px; background: #087a45; color: #fff; font: inherit; font-size: 16px; font-weight: 750; }
+    .send:disabled { cursor: not-allowed; background: #a9b8b0; }
+    .status { min-height: 24px; margin: 14px 0 0; color: #23553f; font-size: 14px; font-weight: 700; text-align: center; }
+    .privacy { display: flex; align-items: flex-start; gap: 10px; margin-top: 28px; border-top: 1px solid #d7dfda; padding-top: 18px; color: #66756f; font-size: 13px; line-height: 1.45; }
+    .privacy strong { color: #334b42; }
+    .sent .actions, .sent .selection, .sent .send { display: none; }
+    .sent .status { margin-top: 40px; border: 1px solid #9dd7b5; border-radius: 8px; background: #e6f5eb; padding: 28px 18px; color: #13663c; font-size: 17px; }
+    @media (max-width: 360px) { .actions { grid-template-columns: 1fr; } h1 { font-size: 25px; } }
+  </style>
+</head>
+<body>
+  <header class="masthead">
+    <div class="brand"><div class="mark">ST</div><div><p class="brand-name">SoleTrader</p><p class="brand-detail">Private receipt transfer</p></div></div>
+  </header>
+  <main>
+    <h1>Send your receipt</h1>
+    <p class="intro">Take a clear photo now or select an existing image from your phone.</p>
+    <div class="actions">
+      <label class="choice" for="camera"><span class="choice-icon" aria-hidden="true">&#9673;</span><span>Take photo</span></label>
+      <input id="camera" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" capture="environment">
+      <label class="choice" for="library"><span class="choice-icon" aria-hidden="true">&#9638;</span><span>Choose photo</span></label>
+      <input id="library" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif">
+    </div>
+    <section id="selection" class="selection" aria-live="polite">
+      <div class="preview"><img id="preview" alt="Selected receipt preview"><p id="preview-fallback" class="preview-fallback">Photo selected and ready to send</p></div>
+      <div class="file-row"><div class="file-copy"><p id="file-name" class="file-name"></p><p id="file-size" class="file-size"></p></div><button id="clear" class="clear" type="button">Remove</button></div>
+    </section>
+    <button id="send" class="send" type="button" disabled>Send to computer</button>
+    <p id="status" class="status" role="status"></p>
+    <div class="privacy"><span aria-hidden="true">&#9679;</span><span><strong>Private and single-use.</strong> The image goes directly to SoleTrader on your computer over your local network. This link accepts one image and expires automatically.</span></div>
+  </main>
+  <script>
+    const camera = document.querySelector('#camera');
+    const library = document.querySelector('#library');
+    const selection = document.querySelector('#selection');
+    const preview = document.querySelector('#preview');
+    const fallback = document.querySelector('#preview-fallback');
+    const fileName = document.querySelector('#file-name');
+    const fileSize = document.querySelector('#file-size');
+    const clear = document.querySelector('#clear');
+    const send = document.querySelector('#send');
+    const status = document.querySelector('#status');
+    let selectedFile = null;
+    let previewUrl = '';
+
+    function choose(file) {
+      if (!file) return;
+      if (file.size > 25 * 1024 * 1024) { status.textContent = 'Receipt images must be 25 MB or smaller.'; return; }
+      selectedFile = file;
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      previewUrl = URL.createObjectURL(file);
+      preview.src = previewUrl;
+      preview.style.display = 'block';
+      fallback.style.display = 'none';
+      preview.onerror = () => { preview.style.display = 'none'; fallback.style.display = 'block'; };
+      fileName.textContent = file.name || 'Receipt photo';
+      fileSize.textContent = `${(file.size / 1024 / 1024).toFixed(1)} MB`;
+      selection.classList.add('visible');
+      send.disabled = false;
+      status.textContent = '';
+    }
+    camera.onchange = () => choose(camera.files[0]);
+    library.onchange = () => choose(library.files[0]);
+    clear.onclick = () => { selectedFile = null; camera.value = ''; library.value = ''; selection.classList.remove('visible'); send.disabled = true; status.textContent = ''; if (previewUrl) URL.revokeObjectURL(previewUrl); previewUrl = ''; };
+    send.onclick = async () => {
+      if (!selectedFile) return;
+      send.disabled = true;
+      status.textContent = 'Sending receipt...';
+      const data = new FormData();
+      data.append('receipt', selectedFile);
+      try {
+        const response = await fetch(location.href, { method: 'POST', body: data });
+        const text = await response.text();
+        if (!response.ok) throw new Error(text);
+        document.body.classList.add('sent');
+        status.textContent = 'Receipt sent. You can return to your computer.';
+      } catch (error) {
+        status.textContent = error.message || 'Upload failed. Please try again.';
+        send.disabled = false;
+      }
+    };
+  </script>
+</body>
+</html>

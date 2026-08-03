@@ -1,0 +1,21 @@
+CREATE TABLE IF NOT EXISTS tax_calculator_inputs (
+    tax_year TEXT PRIMARY KEY REFERENCES tax_year_config(tax_year) ON DELETE CASCADE,
+    marriage_allowance_claimed INTEGER NOT NULL DEFAULT 0 CHECK (marriage_allowance_claimed IN (0, 1)),
+    blind_person_allowance_claimed INTEGER NOT NULL DEFAULT 0 CHECK (blind_person_allowance_claimed IN (0, 1)),
+    employment_income REAL NOT NULL DEFAULT 0 CHECK (employment_income >= 0),
+    employment_tax_paid REAL NOT NULL DEFAULT 0 CHECK (employment_tax_paid >= 0),
+    rental_income REAL NOT NULL DEFAULT 0 CHECK (rental_income >= 0),
+    savings_interest REAL NOT NULL DEFAULT 0 CHECK (savings_interest >= 0),
+    dividend_income REAL NOT NULL DEFAULT 0 CHECK (dividend_income >= 0),
+    pension_contributions REAL NOT NULL DEFAULT 0 CHECK (pension_contributions >= 0),
+    gift_aid_donations REAL NOT NULL DEFAULT 0 CHECK (gift_aid_donations >= 0),
+    home_office_method TEXT NOT NULL DEFAULT 'none' CHECK (home_office_method IN ('none', 'flat_rate', 'actual')),
+    home_office_hours_per_month REAL NOT NULL DEFAULT 0 CHECK (home_office_hours_per_month >= 0),
+    home_office_months INTEGER NOT NULL DEFAULT 12 CHECK (home_office_months BETWEEN 0 AND 12),
+    home_office_actual_cost REAL NOT NULL DEFAULT 0 CHECK (home_office_actual_cost >= 0),
+    prior_year_tax_bill REAL NOT NULL DEFAULT 0 CHECK (prior_year_tax_bill >= 0),
+    prior_year_tax_deducted REAL NOT NULL DEFAULT 0 CHECK (prior_year_tax_deducted >= 0),
+    other_tax_deducted REAL NOT NULL DEFAULT 0 CHECK (other_tax_deducted >= 0),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
