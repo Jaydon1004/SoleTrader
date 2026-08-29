@@ -5,6 +5,7 @@ import {
   Calculator,
   Car,
   FileText,
+  BadgePoundSterling,
   FolderOpen,
   History,
   Landmark,
@@ -25,6 +26,7 @@ export const navigationGroups = [
     label: "Sales",
     items: [
       { to: "/invoices", icon: FileText, label: "Invoices" },
+      { to: "/income", icon: BadgePoundSterling, label: "Direct income" },
       { to: "/clients", icon: Users, label: "Clients" },
     ],
   },

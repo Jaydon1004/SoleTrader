@@ -59,6 +59,8 @@ export interface DashboardData {
   income: number;
   expenses: number;
   profit: number;
+  cashReceived: number;
+  cashExpenses: number;
   tax: TaxEstimate;
   taxPaid: number;
   taxPot: number;
@@ -111,6 +113,8 @@ async function loadYearCore(
 ) {
   const [
     invoiceIncome,
+    directIncome,
+    cashIncome,
     paymentIncome,
     expenseRows,
     mileageRows,
@@ -128,6 +132,20 @@ async function loadYearCore(
        FROM credit_notes c INNER JOIN invoices i ON i.id = c.invoice_id
        WHERE i.deleted_at IS NULL AND i.is_quote = 0
          AND c.issue_date BETWEEN ? AND ?`,
+      [config.year_start, config.year_end, config.year_start, config.year_end],
+    ),
+    query<DatedSale>(
+      `SELECT income_date AS date, gross_amount AS gross, gross_amount - vat_amount AS net
+       FROM direct_income WHERE deleted_at IS NULL AND income_date BETWEEN ? AND ?`,
+      [config.year_start, config.year_end],
+    ),
+    query<DatedAmount>(
+      `SELECT p.payment_date AS date, COALESCE(p.cash_amount, p.amount) AS amount
+       FROM invoice_payments p INNER JOIN invoices i ON i.id = p.invoice_id
+       WHERE i.deleted_at IS NULL AND i.is_quote = 0 AND p.payment_date BETWEEN ? AND ?
+       UNION ALL
+       SELECT income_date AS date, amount FROM direct_income
+       WHERE deleted_at IS NULL AND income_date BETWEEN ? AND ?`,
       [config.year_start, config.year_end, config.year_start, config.year_end],
     ),
     query<DatedSale>(
@@ -167,9 +185,10 @@ async function loadYearCore(
   const opening = Object.fromEntries(
     openingRows.map((row) => [row.key, Number(row.value) || 0]),
   );
-  const selectedIncomeRows = (
-    profile.accounting_basis === "cash" ? paymentIncome : invoiceIncome
-  ).map((row) => ({
+  const selectedIncomeRows = [
+    ...(profile.accounting_basis === "cash" ? paymentIncome : invoiceIncome),
+    ...directIncome,
+  ].map((row) => ({
     date: row.date,
     amount: taxableSaleAmount(row.gross, row.net, profile),
   }));
@@ -204,11 +223,19 @@ async function loadYearCore(
       (sum, row) => sum + row.amount,
       0,
     ) + (opening.opening_expenses ?? 0);
+  const cashReceived =
+    cashIncome.reduce((sum, row) => sum + row.amount, 0) +
+    (opening.opening_income ?? 0);
+  const cashExpenses =
+    [...expenseRows, ...costRows].reduce((sum, row) => sum + row.gross, 0) +
+    (opening.opening_expenses ?? 0);
 
   return {
     income: round(income),
     expenses: round(expenses),
     profit: round(income - expenses),
+    cashReceived: round(cashReceived),
+    cashExpenses: round(cashExpenses),
     taxPaid: opening.opening_tax_paid ?? 0,
     selectedIncomeRows,
     expenseRows: mappedExpenseRows,
@@ -288,8 +315,17 @@ export function useDashboardData(taxYear: string) {
               `SELECT COALESCE(NULLIF(c.company, ''), c.name) AS name, p.amount AS gross,
                 p.amount * i.subtotal / NULLIF(i.total, 0) AS net
                FROM invoice_payments p INNER JOIN invoices i ON i.id = p.invoice_id INNER JOIN clients c ON c.id = i.client_id
-               WHERE i.deleted_at IS NULL AND p.payment_date BETWEEN ? AND ?`,
-              [config.year_start, config.year_end],
+               WHERE i.deleted_at IS NULL AND p.payment_date BETWEEN ? AND ?
+               UNION ALL
+               SELECT COALESCE(NULLIF(c.company, ''), c.name, d.description), d.gross_amount, d.gross_amount - d.vat_amount
+               FROM direct_income d LEFT JOIN clients c ON c.id = d.client_id
+               WHERE d.deleted_at IS NULL AND d.income_date BETWEEN ? AND ?`,
+              [
+                config.year_start,
+                config.year_end,
+                config.year_start,
+                config.year_end,
+              ],
             )
           : query<NamedSale>(
               `SELECT COALESCE(NULLIF(c.company, ''), c.name) AS name,
@@ -303,8 +339,14 @@ export function useDashboardData(taxYear: string) {
                  -(cn.amount * inv.subtotal / NULLIF(inv.total, 0))
                FROM credit_notes cn INNER JOIN invoices inv ON inv.id = cn.invoice_id
                INNER JOIN clients cl ON cl.id = inv.client_id
-               WHERE inv.deleted_at IS NULL AND inv.is_quote = 0 AND cn.issue_date BETWEEN ? AND ?`,
+               WHERE inv.deleted_at IS NULL AND inv.is_quote = 0 AND cn.issue_date BETWEEN ? AND ?
+               UNION ALL
+               SELECT COALESCE(NULLIF(c.company, ''), c.name, d.description), d.gross_amount, d.gross_amount - d.vat_amount
+               FROM direct_income d LEFT JOIN clients c ON c.id = d.client_id
+               WHERE d.deleted_at IS NULL AND d.income_date BETWEEN ? AND ?`,
               [
+                config.year_start,
+                config.year_end,
                 config.year_start,
                 config.year_end,
                 config.year_start,
@@ -415,6 +457,8 @@ export function useDashboardData(taxYear: string) {
         income: core.income,
         expenses: core.expenses,
         profit: core.profit,
+        cashReceived: core.cashReceived,
+        cashExpenses: core.cashExpenses,
         tax,
         taxPaid: core.taxPaid,
         taxPot,

@@ -4,7 +4,7 @@ import {
   taxYearForBankDate,
 } from "@/lib/bank-import";
 
-export type MigrationKind = "clients" | "expenses";
+export type MigrationKind = "clients" | "expenses" | "income";
 export type MigrationMapping = Record<string, string>;
 
 export interface MigrationPreviewRow {
@@ -35,6 +35,7 @@ export const migrationFields = {
     "category",
     "notes",
   ],
+  income: ["date", "description", "amount", "vat", "type", "paymentMethod", "notes"],
 } satisfies Record<MigrationKind, string[]>;
 
 const aliases: Record<string, RegExp[]> = {
@@ -47,13 +48,15 @@ const aliases: Record<string, RegExp[]> = {
   county: [/county|region/],
   postcode: [/post.?code|zip/],
   notes: [/notes?|memo/],
-  date: [/^date$/, /expense date|transaction date|paid date/],
+  date: [/^date$/, /expense date|transaction date|paid date|payment date/],
   supplier: [/supplier|merchant|payee|vendor/],
   description: [/description|details|item|narrative/],
   amount: [/^amount$|total|gross/],
   vat: [/vat|tax amount/],
   businessPercent: [/business.*%|business percent|business use/],
   category: [/category|expense type|account/],
+  type: [/income type|sale type|category/],
+  paymentMethod: [/payment method|paid by|method/],
 };
 
 const clean = (value: string) =>
@@ -131,6 +134,13 @@ export function mapMigrationRows(
       notes: text("notes"),
       taxYear: date ? taxYearForBankDate(date) : "",
     };
+    if (kind === "income") {
+      if (!date) errors.push("Invalid date");
+      if (!description) errors.push("Missing description");
+      if (!Number.isFinite(amount) || amount <= 0) errors.push("Amount must be greater than zero");
+      if (!Number.isFinite(vat) || vat < 0 || vat > amount) errors.push("Invalid VAT");
+      return { rowNumber: index + 2, values: { date, description, amount, vat, type: text("type") || "sale", paymentMethod: text("paymentMethod"), notes: text("notes"), taxYear: date ? taxYearForBankDate(date) : "" }, error: errors.join("; ") };
+    }
     return { rowNumber: index + 2, values, error: errors.join("; ") };
   });
 }

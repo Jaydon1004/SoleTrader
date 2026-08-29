@@ -49,7 +49,7 @@ async fn import_at(
     path: &Path,
     input: MigrationImportInput,
 ) -> Result<MigrationImportResult, String> {
-    if !matches!(input.kind.as_str(), "clients" | "expenses") {
+    if !matches!(input.kind.as_str(), "clients" | "expenses" | "income") {
         return Err("Import type is invalid.".into());
     }
     let pool = SqlitePoolOptions::new()
@@ -87,6 +87,24 @@ async fn import_at(
             sqlx::query("INSERT INTO clients (name, company, email, phone, address_line_1, city, county, postcode, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
                 .bind(name).bind(company).bind(email).bind(text(&row.values, "phone")).bind(text(&row.values, "address"))
                 .bind(text(&row.values, "city")).bind(text(&row.values, "county")).bind(text(&row.values, "postcode")).bind(text(&row.values, "notes"))
+                .execute(&mut *transaction).await.map_err(|error| error.to_string())?;
+            imported += 1;
+        }
+    } else if input.kind == "income" {
+        for row in input.rows.iter().filter(|row| row.error.is_empty()) {
+            let date = text(&row.values, "date");
+            let description = text(&row.values, "description");
+            let amount = number(&row.values, "amount")?;
+            let vat = if row.values.get("vat").is_some() { number(&row.values, "vat")? } else { 0.0 };
+            let tax_year = tax_year_for_date(&date)?;
+            if description.is_empty() || !amount.is_finite() || amount <= 0.0 || !vat.is_finite() || vat < 0.0 || vat > amount {
+                return Err("Imported income values are invalid.".into());
+            }
+            let exists = sqlx::query_scalar::<_, i64>("SELECT EXISTS(SELECT 1 FROM direct_income WHERE income_date = ? AND amount = ? AND lower(description) = lower(?) AND deleted_at IS NULL)")
+                .bind(&date).bind(amount).bind(&description).fetch_one(&mut *transaction).await.map_err(|error| error.to_string())?;
+            if exists == 1 { duplicates += 1; continue; }
+            sqlx::query("INSERT INTO direct_income (income_date, description, income_type, amount, gross_amount, vat_amount, payment_method, notes, tax_year) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+                .bind(date).bind(description).bind({ let value = text(&row.values, "type"); if value.is_empty() { "sale".to_string() } else { value } }).bind(amount).bind(amount).bind(vat).bind(text(&row.values, "paymentMethod")).bind(text(&row.values, "notes")).bind(tax_year)
                 .execute(&mut *transaction).await.map_err(|error| error.to_string())?;
             imported += 1;
         }

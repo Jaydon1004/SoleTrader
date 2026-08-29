@@ -88,7 +88,7 @@ export function useAdvancedTaxData(taxYear: string) {
     queryKey: ["advanced-tax", taxYear],
     enabled: !!taxYear,
     queryFn: async (): Promise<AdvancedTaxData> => {
-      const [assets, configs, cisTransactions] = await Promise.all([
+      const [assets, configs, cisTransactions, directCis] = await Promise.all([
         query<CapitalAsset>(
           "SELECT * FROM capital_assets WHERE deleted_at IS NULL ORDER BY purchase_date DESC, id DESC",
         ),
@@ -102,6 +102,10 @@ export function useAdvancedTaxData(taxYear: string) {
           WHERE ct.deleted_at IS NULL AND ct.tax_year = ? ORDER BY ct.date DESC, ct.id DESC`,
           [taxYear],
         ),
+        query<{ id: number; date: string; deduction_amount: number }>(
+          "SELECT id, income_date AS date, cis_deduction_amount AS deduction_amount FROM direct_income WHERE deleted_at IS NULL AND cis_deduction_amount > 0 AND tax_year = ?",
+          [taxYear],
+        ),
       ]);
       const schedules = calculateCapitalAllowanceSchedules(assets, configs);
       const schedule =
@@ -113,7 +117,7 @@ export function useAdvancedTaxData(taxYear: string) {
         schedule,
         cisReceived: cisTransactions
           .filter((entry) => entry.direction === "received")
-          .reduce((sum, entry) => sum + entry.deduction_amount, 0),
+          .reduce((sum, entry) => sum + entry.deduction_amount, 0) + directCis.reduce((sum, entry) => sum + entry.deduction_amount, 0),
         cisMade: cisTransactions
           .filter((entry) => entry.direction === "made")
           .reduce((sum, entry) => sum + entry.deduction_amount, 0),

@@ -132,6 +132,36 @@ pub fn run() {
             sql: include_str!("../migrations/020_integrity_hardening.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 21,
+            description: "add_direct_income",
+            sql: include_str!("../migrations/021_direct_income.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 22,
+            description: "add_accounts_and_bank_classification",
+            sql: include_str!("../migrations/022_accounts_and_bank_classification.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 23,
+            description: "add_bank_rules_transfers_and_splits",
+            sql: include_str!("../migrations/023_bank_rules_transfers_splits.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 24,
+            description: "add_direct_income_cis",
+            sql: include_str!("../migrations/024_direct_income_cis.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 25,
+            description: "index_direct_income_clients",
+            sql: include_str!("../migrations/025_direct_income_editing.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     let mut builder = tauri::Builder::default()
@@ -158,6 +188,13 @@ pub fn run() {
             workspaces::backup_business_workspace,
             workspaces::restore_business_workspace,
             transactions::create_expense_from_bank,
+            transactions::create_direct_income,
+            transactions::update_direct_income,
+            transactions::create_direct_income_from_bank,
+            transactions::classify_bank_transaction,
+            transactions::bulk_classify_bank_transactions,
+            transactions::link_bank_transfer,
+            transactions::split_bank_transaction,
             transactions::execute_allowed_statement,
             transactions::record_invoice_payment_from_bank,
             transactions::link_document_expense,

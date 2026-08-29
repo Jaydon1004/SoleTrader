@@ -36,10 +36,22 @@ export const helpTopics: HelpTopic[] = [
       "Treat calculations as working estimates until they are independently reviewed.",
     details: [
       "SoleTrader does not submit returns to HMRC and does not replace professional tax advice or filing confirmation.",
+      "The MTD setting records digital-preparation readiness only. It does not authorise HMRC access or submit a VAT return.",
       "Have an accountant review VAT returns, Self Assessment, CIS, self-billing, capital allowances and unusual transactions before filing.",
       "Keep HMRC receipts and source evidence outside the app as part of your statutory records.",
     ],
     keywords: ["hmrc", "filing", "estimate", "vat", "tax", "cis", "accountant"],
+  },
+  {
+    id: "bank-connections",
+    title: "Bank connections and account data",
+    summary: "Use local statement imports and keep account classifications accurate.",
+    details: [
+      "SoleTrader does not connect to banks or use open banking. Import a statement exported by your bank or payment provider.",
+      "Create separate local accounts for current accounts, cash, PayPal, Stripe, cards and savings, then filter reconciliation by account.",
+      "Classify owner movements, transfers, loans and refunds so they are not reported as sales or allowable expenses.",
+    ],
+    keywords: ["bank", "account", "open banking", "transfer", "owner", "classification"],
   },
   {
     id: "backup-restore",

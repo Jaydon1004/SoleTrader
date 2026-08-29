@@ -58,6 +58,10 @@ export function useReportLedger(
     queryFn: async (): Promise<ReportLedgerData> => {
       if (!profile || !config)
         throw new Error("Report configuration is unavailable.");
+      const directRows = await query<ReportNamedSale>(
+        `SELECT COALESCE(NULLIF(c.company, ''), c.name, d.description) AS name, d.gross_amount AS gross, d.gross_amount - d.vat_amount AS net FROM direct_income d LEFT JOIN clients c ON c.id = d.client_id WHERE d.deleted_at IS NULL AND d.income_date BETWEEN ? AND ?`,
+        [config.year_start, config.year_end],
+      );
       const incomeRows =
         profile.accounting_basis === "cash"
           ? await query<ReportNamedSale>(
@@ -87,7 +91,7 @@ export function useReportLedger(
                 config.year_end,
               ],
             );
-      const incomeByClient = groupTaxableSales(incomeRows, profile);
+      const incomeByClient = groupTaxableSales([...incomeRows, ...directRows], profile);
       const today = new Date().toISOString().slice(0, 10);
       const debtorRows = await query<{
         invoice_reference: string;

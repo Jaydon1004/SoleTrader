@@ -400,6 +400,11 @@ export async function exportAccountantPackage(
     ),
   ]);
 
+  const directIncome = await query<ExportRow>(
+    `SELECT id AS "Income ID", income_date AS "Date", description AS "Description", income_type AS "Type", amount AS "Cash received", gross_amount AS "Gross income", cis_deduction_amount AS "CIS deducted", vat_amount AS "VAT", vat_rate AS "VAT rate", payment_method AS "Payment method", client_id AS "Client ID", bank_transaction_id AS "Bank transaction ID", notes AS "Notes" FROM direct_income WHERE deleted_at IS NULL AND income_date BETWEEN ? AND ? ORDER BY income_date, id`,
+    [config.year_start, config.year_end],
+  );
+
   await mkdir(root, { recursive: true });
   await Promise.all(
     folders.map((folder) => mkdir(joinPath(root, folder), { recursive: true })),
@@ -411,6 +416,7 @@ export async function exportAccountantPackage(
     ["01-sales/payments-received.csv", payments],
     ["01-sales/credit-notes.csv", creditNotes],
     ["01-sales/clients.csv", clients],
+    ["01-sales/direct-income.csv", directIncome],
     ["02-expenses/expenses.csv", expenses],
     ["02-expenses/category-summary.csv", expenseCategories],
     ["03-bank/bank-transactions.csv", bankTransactions],

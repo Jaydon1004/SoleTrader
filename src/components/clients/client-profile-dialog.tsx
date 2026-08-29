@@ -267,6 +267,46 @@ export function ClientProfileDialog({
         <section className="border-t pt-5">
           <div className="mb-3 flex items-center justify-between">
             <h3 className="flex items-center gap-2 text-sm font-semibold">
+              <ReceiptText className="h-4 w-4" /> Direct income
+            </h3>
+            <span className="text-xs text-muted-foreground">
+              {workspace?.directIncome.length ?? 0} payment
+              {workspace?.directIncome.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          {workspace?.directIncome.length ? (
+            <div className="overflow-hidden rounded-md border">
+              {workspace.directIncome.map((income) => (
+                <div
+                  className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b p-3 last:border-0"
+                  key={income.id}
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">
+                      {income.description}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {dateFormatter.format(
+                        new Date(`${income.income_date}T00:00:00`),
+                      )} · {income.payment_method || "Payment received"}
+                    </p>
+                  </div>
+                  <p className="text-sm font-semibold text-green-600 dark:text-green-400">
+                    {currencyFormatter.format(income.gross_amount)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-md border border-dashed py-6 text-center text-sm text-muted-foreground">
+              No direct income for this client.
+            </p>
+          )}
+        </section>
+
+        <section className="border-t pt-5">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="flex items-center gap-2 text-sm font-semibold">
               <ReceiptText className="h-4 w-4" /> Payment history
             </h3>
             <span className="text-xs text-muted-foreground">

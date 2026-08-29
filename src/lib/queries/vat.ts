@@ -32,6 +32,12 @@ interface PurchaseVatRow {
   vat_capital_asset: number;
 }
 
+interface DirectIncomeVatRow {
+  income_date: string;
+  amount: number;
+  vat_amount: number;
+}
+
 export interface VatPeriod {
   start: string;
   end: string;
@@ -188,6 +194,7 @@ export function calculateReturn(
   credits: CreditVatRow[],
   purchases: PurchaseVatRow[],
   adjustments: VatAdjustment[] = [],
+  directIncome: DirectIncomeVatRow[] = [],
 ): VatReturnSummary {
   let salesNet = 0;
   let salesVat = 0;
@@ -214,6 +221,14 @@ export function calculateReturn(
       salesGross += invoice.total;
       if (invoice.vat_ec_supply === 1) ecSales += invoice.subtotal;
     }
+  }
+
+  for (const income of directIncome.filter((row) =>
+    inPeriod(row.income_date, period),
+  )) {
+    salesGross += income.amount;
+    salesVat += income.vat_amount;
+    salesNet += income.amount - income.vat_amount;
   }
 
   const cashCreditAmounts = cashScheme
@@ -325,6 +340,7 @@ export function useVatOverview(taxYear: string) {
         invoices,
         payments,
         credits,
+        directIncome,
         expenses,
         vehicleCosts,
         turnoverRows,
@@ -346,6 +362,9 @@ export function useVatOverview(taxYear: string) {
         query<CreditVatRow>(
           `SELECT i.id, i.issue_date, i.subtotal, i.vat_amount, i.total, i.vat_ec_supply, c.issue_date AS credit_date, c.amount AS credit_amount FROM credit_notes c INNER JOIN invoices i ON i.id = c.invoice_id WHERE i.deleted_at IS NULL AND i.is_quote = 0`,
         ),
+        query<DirectIncomeVatRow>(
+          "SELECT income_date, gross_amount AS amount, vat_amount FROM direct_income WHERE deleted_at IS NULL",
+        ),
         query<PurchaseVatRow>(
           `SELECT date, amount, vat_amount, business_percent, vat_ec_acquisition, vat_capital_asset FROM expenses WHERE deleted_at IS NULL`,
         ),
@@ -353,7 +372,7 @@ export function useVatOverview(taxYear: string) {
           `SELECT date, amount, vat_amount, business_percent, 0 AS vat_ec_acquisition, vat_capital_asset FROM vehicle_costs WHERE deleted_at IS NULL`,
         ),
         query<{ turnover: number }>(
-          `SELECT COALESCE((SELECT SUM(subtotal) FROM invoices WHERE deleted_at IS NULL AND is_quote = 0 AND (status NOT IN ('draft', 'cancelled') OR bad_debt_written_off = 1) AND issue_date BETWEEN date('now', '-12 months') AND date('now')), 0) - COALESCE((SELECT SUM(c.amount * i.subtotal / NULLIF(i.total, 0)) FROM credit_notes c INNER JOIN invoices i ON i.id = c.invoice_id WHERE c.issue_date BETWEEN date('now', '-12 months') AND date('now') AND i.deleted_at IS NULL), 0) AS turnover`,
+          `SELECT COALESCE((SELECT SUM(subtotal) FROM invoices WHERE deleted_at IS NULL AND is_quote = 0 AND (status NOT IN ('draft', 'cancelled') OR bad_debt_written_off = 1) AND issue_date BETWEEN date('now', '-12 months') AND date('now')), 0) + COALESCE((SELECT SUM(gross_amount - vat_amount) FROM direct_income WHERE deleted_at IS NULL AND income_type = 'sale' AND income_date BETWEEN date('now', '-12 months') AND date('now')), 0) - COALESCE((SELECT SUM(c.amount * i.subtotal / NULLIF(i.total, 0)) FROM credit_notes c INNER JOIN invoices i ON i.id = c.invoice_id WHERE c.issue_date BETWEEN date('now', '-12 months') AND date('now') AND i.deleted_at IS NULL), 0) AS turnover`,
         ),
         query<VatReturnSnapshot>(
           "SELECT * FROM vat_return_snapshots WHERE tax_year = ?",
@@ -389,6 +408,7 @@ export function useVatOverview(taxYear: string) {
             credits,
             [...expenses, ...vehicleCosts],
             adjustments,
+            directIncome,
           );
           const snapshot = snapshots.find(
             (candidate) =>

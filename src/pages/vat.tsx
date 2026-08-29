@@ -674,10 +674,10 @@ export function VatPage() {
                 </div>
                 <div className="flex items-center justify-between gap-4 rounded-md border p-3">
                   <div>
-                    <Label htmlFor="mtd">Making Tax Digital</Label>
+                    <Label htmlFor="mtd">MTD preparation tracker</Label>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Record that VAT returns are maintained for digital
-                      submission.
+                      Record that your VAT records are maintained digitally.
+                      SoleTrader does not connect to HMRC or submit returns.
                     </p>
                   </div>
                   <Switch

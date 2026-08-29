@@ -36,6 +36,7 @@ export function useMigrationImport() {
       [
         "clients",
         "expenses",
+        "income",
         "expense-summary",
         "dashboard",
         "vat",

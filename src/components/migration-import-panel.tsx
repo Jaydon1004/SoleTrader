@@ -48,10 +48,13 @@ const labels: Record<string, string> = {
   vat: "VAT",
   businessPercent: "Business use %",
   category: "Category",
+  type: "Income type",
+  paymentMethod: "Payment method",
 };
 const required = {
   clients: new Set(["name"]),
   expenses: new Set(["date", "description", "amount"]),
+  income: new Set(["date", "description", "amount"]),
 };
 
 function ColumnSelect({
@@ -163,7 +166,7 @@ export function MigrationImportPanel() {
       <CardHeader>
         <CardTitle>Spreadsheet migration</CardTitle>
         <CardDescription>
-          Import clients or historical expenses from any headed CSV. Review
+          Import clients, historical expenses, or direct income from any headed CSV. Review
           mapping and validation before records are written.
         </CardDescription>
       </CardHeader>
@@ -181,6 +184,7 @@ export function MigrationImportPanel() {
               <SelectContent>
                 <SelectItem value="clients">Clients</SelectItem>
                 <SelectItem value="expenses">Expenses</SelectItem>
+                <SelectItem value="income">Direct income</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -216,7 +220,7 @@ export function MigrationImportPanel() {
                 ))}
               </div>
             </div>
-            {kind === "expenses" && (
+              {kind === "expenses" && (
               <div className="max-w-sm space-y-1.5">
                 <Label>Fallback category *</Label>
                 <Select

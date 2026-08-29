@@ -20,6 +20,7 @@ export interface BankTransaction {
   matched_invoice_id: number | null;
   matched_expense_id: number | null;
   matched_payment_id: number | null;
+    matched_income_id: number | null;
   manual_category_id: number | null;
   status: "unmatched" | "matched" | "ignored";
   source_file: string;
@@ -30,10 +31,13 @@ export interface BankTransaction {
   raw_data: string;
   created_at: string;
   updated_at: string;
+  bank_account_id: number;
+  classification: string;
   invoice_reference: string;
   client_name: string;
   expense_description: string;
   expense_category: string;
+  income_description: string;
 }
 
 export interface BankImportBatch {
@@ -53,10 +57,19 @@ export interface BankReconciliationSettings {
   updated_at: string;
 }
 
+export interface BankAccount {
+  id: number;
+  name: string;
+  account_type: string;
+  opening_balance: number;
+  archived: number;
+}
+
 export interface BankFilters {
   taxYear: string;
   status: string;
   search: string;
+  bankAccountId?: string;
 }
 
 export interface BankMatchOptions {
@@ -76,6 +89,7 @@ function invalidate(queryClient: ReturnType<typeof useQueryClient>) {
   queryClient.invalidateQueries({ queryKey: ["bank-import-batches"] });
   queryClient.invalidateQueries({ queryKey: ["invoices"] });
   queryClient.invalidateQueries({ queryKey: ["expenses"] });
+    queryClient.invalidateQueries({ queryKey: ["direct-income"] });
   queryClient.invalidateQueries({ queryKey: ["dashboard"] });
   queryClient.invalidateQueries({ queryKey: ["vat"] });
   queryClient.invalidateQueries({ queryKey: ["reports"] });
@@ -115,25 +129,80 @@ export function useBankTransactions(filters: BankFilters) {
         conditions.push("b.status = ?");
         values.push(filters.status);
       }
+      if (filters.bankAccountId && filters.bankAccountId !== "all") {
+        conditions.push("b.bank_account_id = ?");
+        values.push(Number(filters.bankAccountId));
+      }
       if (filters.search.trim()) {
         conditions.push(
-          "(b.description LIKE ? OR i.invoice_number LIKE ? OR i.external_reference LIKE ? OR c.name LIKE ? OR e.description LIKE ? OR ec.name LIKE ?)",
+          "(b.description LIKE ? OR i.invoice_number LIKE ? OR i.external_reference LIKE ? OR c.name LIKE ? OR e.description LIKE ? OR ec.name LIKE ? OR di.description LIKE ?)",
         );
         const value = `%${filters.search.trim()}%`;
-        values.push(value, value, value, value, value, value);
+        values.push(value, value, value, value, value, value, value);
       }
       return query<BankTransaction>(
         `SELECT b.*, COALESCE(CASE WHEN i.source_type = 'self_billed' THEN i.external_reference ELSE i.invoice_number END, '') AS invoice_reference, COALESCE(c.name, '') AS client_name,
-          COALESCE(e.description, '') AS expense_description, COALESCE(ec.name, '') AS expense_category
+          COALESCE(e.description, '') AS expense_description, COALESCE(ec.name, '') AS expense_category,
+          COALESCE(di.description, '') AS income_description
          FROM bank_transactions b
          LEFT JOIN invoices i ON i.id = b.matched_invoice_id
          LEFT JOIN clients c ON c.id = i.client_id
          LEFT JOIN expenses e ON e.id = b.matched_expense_id
          LEFT JOIN expense_categories ec ON ec.id = e.category_id
+               LEFT JOIN direct_income di ON di.id = b.matched_income_id
          WHERE ${conditions.join(" AND ")} ORDER BY b.transaction_date DESC, b.id DESC`,
         values,
       );
     },
+  });
+}
+
+export function useBankAccounts() {
+  return useQuery({
+    queryKey: ["bank-accounts"],
+    queryFn: () => query<BankAccount>("SELECT * FROM bank_accounts WHERE archived = 0 ORDER BY name"),
+  });
+}
+
+export function useCreateBankAccount() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name, accountType, openingBalance }: { name: string; accountType: string; openingBalance: number }) => execute("INSERT INTO bank_accounts (name, account_type, opening_balance) VALUES (?, ?, ?)", [name.trim(), accountType, openingBalance]),
+    onSuccess: () => { client.invalidateQueries({ queryKey: ["bank-accounts"] }); client.invalidateQueries({ queryKey: ["bank-reconciliation"] }); },
+  });
+}
+
+export function useLinkBankTransfer() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ firstTransactionId, secondTransactionId }: { firstTransactionId: number; secondTransactionId: number }) => invoke("link_bank_transfer", { input: { workspace_id: getActiveWorkspaceId(), first_transaction_id: firstTransactionId, second_transaction_id: secondTransactionId } }),
+    onSuccess: () => invalidate(client),
+  });
+}
+
+export function useSplitBankTransaction() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { transactionId: number; firstDescription: string; firstAmount: number; firstClassification: string; secondDescription: string; secondAmount: number; secondClassification: string }) => invoke("split_bank_transaction", { input: { workspace_id: getActiveWorkspaceId(), bank_transaction_id: input.transactionId, first_description: input.firstDescription, first_amount: input.firstAmount, first_classification: input.firstClassification, second_description: input.secondDescription, second_amount: input.secondAmount, second_classification: input.secondClassification } }),
+    onSuccess: () => invalidate(client),
+  });
+}
+
+export function useClassifyBankTransaction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ transactionId, classification }: { transactionId: number; classification: string }) =>
+      invoke("classify_bank_transaction", { input: { workspace_id: getActiveWorkspaceId(), bank_transaction_id: transactionId, classification } }),
+    onSuccess: () => invalidate(queryClient),
+  });
+}
+
+export function useBulkClassifyBankTransactions() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ transactionIds, classification }: { transactionIds: number[]; classification: string }) =>
+      invoke<number>("bulk_classify_bank_transactions", { input: { workspace_id: getActiveWorkspaceId(), bank_transaction_ids: transactionIds, classification } }),
+    onSuccess: () => invalidate(queryClient),
   });
 }
 
@@ -269,7 +338,7 @@ export function useUnmatchBankTransaction() {
   return useMutation({
     mutationFn: (id: number) =>
       execute(
-        "UPDATE bank_transactions SET matched_invoice_id = NULL, matched_payment_id = NULL, matched_expense_id = NULL, status = 'unmatched', match_confidence = '', updated_at = datetime('now') WHERE id = ?",
+        "UPDATE bank_transactions SET matched_invoice_id = NULL, matched_payment_id = NULL, matched_expense_id = NULL, matched_income_id = NULL, status = 'unmatched', match_confidence = '', updated_at = datetime('now') WHERE id = ?",
         [id],
       ),
     onSuccess: () => invalidate(queryClient),
@@ -314,6 +383,16 @@ export function useCreateExpenseFromBank() {
         vatAmount,
         businessPercent,
       }),
+    onSuccess: () => invalidate(queryClient),
+  });
+}
+
+export function useCreateDirectIncomeFromBank() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ transaction, description, incomeType, vatAmount, vatRate, paymentMethod, notes }: {
+      transaction: BankTransaction; description: string; incomeType: string; vatAmount: number; vatRate: number | null; paymentMethod: string; notes: string;
+    }) => invoke<number>("create_direct_income_from_bank", { input: { workspace_id: getActiveWorkspaceId(), bank_transaction_id: transaction.id, description, income_type: incomeType, vat_amount: vatAmount, vat_rate: vatRate, payment_method: paymentMethod, client_id: null, notes } }),
     onSuccess: () => invalidate(queryClient),
   });
 }

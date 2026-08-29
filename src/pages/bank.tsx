@@ -52,6 +52,12 @@ import {
   useBankTransactions,
   useCheckBankDuplicates,
   useCreateExpenseFromBank,
+  useCreateDirectIncomeFromBank,
+  useClassifyBankTransaction,
+  useBulkClassifyBankTransactions,
+  useSplitBankTransaction,
+  useBankAccounts,
+  useCreateBankAccount,
   useIgnoreBankTransaction,
   useImportBankTransactions,
   useMatchBankTransaction,
@@ -72,6 +78,7 @@ import {
   SummaryTile,
 } from "@/components/page-shell";
 import { useFeedback } from "@/components/feedback-provider";
+import { useBankRules, useApplyBankRules, useCreateBankRule, useDeleteBankRule, type BankRuleClassification } from "@/lib/queries/bank-rules";
 
 const money = new Intl.NumberFormat("en-GB", {
   style: "currency",
@@ -537,6 +544,8 @@ function ResolveDialog({
   const match = useMatchBankTransaction();
   const createExpense = useCreateExpenseFromBank();
   const recordPayment = useRecordInvoicePaymentFromBank();
+  const createDirectIncome = useCreateDirectIncomeFromBank();
+  const splitTransaction = useSplitBankTransaction();
   const [candidateId, setCandidateId] = useState("");
   const [invoiceId, setInvoiceId] = useState("");
   const [categoryId, setCategoryId] = useState("");
@@ -545,6 +554,12 @@ function ResolveDialog({
   const [vat, setVat] = useState("");
   const [businessPercent, setBusinessPercent] = useState("100");
   const [error, setError] = useState("");
+  const [activeTab, setActiveTab] = useState("recorded");
+  const [incomeType, setIncomeType] = useState("sale");
+  const [incomeVat, setIncomeVat] = useState("0");
+  const [splitAmount, setSplitAmount] = useState("");
+  const [splitFirstKind, setSplitFirstKind] = useState("expense");
+  const [splitSecondKind, setSplitSecondKind] = useState("expense");
   const { data: selectedInvoice } = useInvoice(
     invoiceId ? Number(invoiceId) : null,
   );
@@ -558,6 +573,12 @@ function ResolveDialog({
     setVat("");
     setBusinessPercent("100");
     setError("");
+    setActiveTab("recorded");
+    setIncomeType("sale");
+    setIncomeVat("0");
+    setSplitAmount("");
+    setSplitFirstKind("expense");
+    setSplitSecondKind("expense");
   }, [isOpen, transaction]);
   if (!transaction) return null;
   const incoming = transaction.amount_in > 0;
@@ -602,6 +623,23 @@ function ResolveDialog({
   };
   const create = async () => {
     try {
+      if (incoming && activeTab === "direct-income") {
+        const parsedVat = Number(incomeVat) || 0;
+        if (parsedVat < 0 || parsedVat > transaction.amount_in)
+          return setError("VAT must be between zero and the transaction amount.");
+        await createDirectIncome.mutateAsync({ transaction, description, incomeType, vatAmount: parsedVat, vatRate: parsedVat ? 20 : null, paymentMethod: "Bank transfer", notes: "Recorded from bank statement" });
+        onOpenChange(false);
+        return;
+      }
+      if (activeTab === "split") {
+        const firstAmount = Number(splitAmount);
+        const total = transaction.amount_in || transaction.amount_out;
+        if (!Number.isFinite(firstAmount) || firstAmount <= 0 || firstAmount >= total)
+          return setError("Enter a first split amount between zero and the transaction total.");
+        await splitTransaction.mutateAsync({ transactionId: transaction.id, firstDescription: `${description} (part 1)`, firstAmount, firstClassification: splitFirstKind, secondDescription: `${description} (part 2)`, secondAmount: total - firstAmount, secondClassification: splitSecondKind });
+        onOpenChange(false);
+        return;
+      }
       if (incoming) {
         if (!invoiceId) return setError("Select an outstanding invoice.");
         await recordPayment.mutateAsync({
@@ -645,12 +683,14 @@ function ResolveDialog({
           {money.format(transaction.amount_in || transaction.amount_out)}
         </p>
       </div>
-      <Tabs defaultValue="recorded">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="recorded">Link recorded</TabsTrigger>
           <TabsTrigger value="create">
             {incoming ? "Record invoice payment" : "Create expense"}
           </TabsTrigger>
+          {incoming && <TabsTrigger value="direct-income">Direct income</TabsTrigger>}
+          <TabsTrigger value="split">Split</TabsTrigger>
         </TabsList>
         <TabsContent value="recorded" className="space-y-4 pt-4">
           {suggestion ? (
@@ -720,6 +760,23 @@ function ResolveDialog({
               Link record
             </Button>
           </div>
+        </TabsContent>
+        {incoming && <TabsContent value="direct-income" className="space-y-4 pt-4">
+          <Alert variant="info"><AlertTitle>No invoice needed</AlertTitle><AlertDescription>Use this for a cash sale, card receipt, platform payout, or other business money received directly.</AlertDescription></Alert>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2 sm:col-span-2"><Label>Description</Label><Textarea rows={2} value={description} onChange={(event) => setDescription(event.target.value)} /></div>
+            <div className="space-y-2"><Label>Income type</Label><Select value={incomeType} onValueChange={setIncomeType}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="sale">Direct sale</SelectItem><SelectItem value="other_business_income">Other business income</SelectItem><SelectItem value="grant">Grant</SelectItem><SelectItem value="refund">Refund</SelectItem><SelectItem value="other">Other</SelectItem></SelectContent></Select></div>
+            <div className="space-y-2"><Label>VAT included</Label><Input type="number" min="0" step="0.01" value={incomeVat} onChange={(event) => setIncomeVat(event.target.value)} /></div>
+          </div>
+          <div className="flex justify-end"><Button onClick={create} disabled={createDirectIncome.isPending}><Check className="mr-2 h-4 w-4" />Record direct income</Button></div>
+        </TabsContent>}
+        <TabsContent value="split" className="space-y-4 pt-4">
+          <Alert variant="info"><AlertTitle>Split this movement</AlertTitle><AlertDescription>Use two parts when one bank transaction contains separate business items. The two amounts must equal {money.format(transaction.amount_in || transaction.amount_out)}.</AlertDescription></Alert>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2"><Label>First part</Label><Input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="First item description" /><Input type="number" min="0.01" step="0.01" value={splitAmount} onChange={(event) => setSplitAmount(event.target.value)} placeholder="Amount" /><Select value={splitFirstKind} onValueChange={setSplitFirstKind}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="expense">Expense</SelectItem><SelectItem value="direct_income">Direct income</SelectItem><SelectItem value="owner_contribution">Owner contribution</SelectItem><SelectItem value="owner_withdrawal">Owner withdrawal</SelectItem></SelectContent></Select></div>
+            <div className="space-y-2"><Label>Second part</Label><Input value={`${description} (part 2)`} readOnly /><Input value={splitAmount ? String(Math.max(0, (transaction.amount_in || transaction.amount_out) - Number(splitAmount))) : ""} readOnly placeholder="Remaining amount" /><Select value={splitSecondKind} onValueChange={setSplitSecondKind}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="expense">Expense</SelectItem><SelectItem value="direct_income">Direct income</SelectItem><SelectItem value="owner_contribution">Owner contribution</SelectItem><SelectItem value="owner_withdrawal">Owner withdrawal</SelectItem></SelectContent></Select></div>
+          </div>
+          <div className="flex justify-end"><Button onClick={create} disabled={splitTransaction.isPending}><Check className="mr-2 h-4 w-4" />Save split</Button></div>
         </TabsContent>
         <TabsContent value="create" className="space-y-4 pt-4">
           {incoming ? (
@@ -852,28 +909,45 @@ function ResolveDialog({
 export function BankPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const taxYearQuery = useTaxYearConfigs();
+  const accountsQuery = useBankAccounts();
+  const rulesQuery = useBankRules();
   const settingsQuery = useBankReconciliationSettings();
   const batchQuery = useBankImportBatches();
   const { data: taxYears } = taxYearQuery;
   const { data: settings } = settingsQuery;
   const updateSettings = useUpdateBankReconciliationSettings();
   const ignore = useIgnoreBankTransaction();
+  const classify = useClassifyBankTransaction();
+  const bulkClassify = useBulkClassifyBankTransactions();
   const unmatch = useUnmatchBankTransaction();
   const { data: batches } = batchQuery;
+  const { data: accounts = [] } = accountsQuery;
+  const { data: rules = [] } = rulesQuery;
+  const createAccount = useCreateBankAccount();
+  const createRule = useCreateBankRule();
+  const deleteRule = useDeleteBankRule();
+  const applyRules = useApplyBankRules();
   const [taxYear, setTaxYear] = useState("all");
+  const [bankAccountId, setBankAccountId] = useState("all");
+  const [newAccountName, setNewAccountName] = useState("");
+  const [newAccountType, setNewAccountType] = useState("current");
+  const [newRuleName, setNewRuleName] = useState("");
+  const [newRulePattern, setNewRulePattern] = useState("");
+  const [newRuleClassification, setNewRuleClassification] = useState("transfer");
   const [status, setStatus] = useState(() =>
     ["all", "matched", "ignored"].includes(searchParams.get("status") ?? "")
       ? searchParams.get("status")!
       : "unmatched",
   );
   const [search, setSearch] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const {
     data: transactions,
     isLoading,
     error,
     isFetching,
     refetch,
-  } = useBankTransactions({ taxYear, status, search });
+  } = useBankTransactions({ taxYear, status, search, bankAccountId });
   const [importOpen, setImportOpen] = useState(false);
   const [selected, setSelected] = useState<BankTransaction | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -887,6 +961,16 @@ export function BankPage() {
     }
   }, [settings]);
   const rows = transactions ?? [];
+  const unmatchedIds = rows.filter((row) => row.status === "unmatched").map((row) => row.id);
+  const toggleSelected = (id: number) => setSelectedIds((current) => {
+    const next = new Set(current);
+    if (next.has(id)) next.delete(id); else if (next.size < 1000) next.add(id);
+    return next;
+  });
+  const bulkClassifyRows = (classification: string) => {
+    if (!selectedIds.size) return;
+    bulkClassify.mutate({ transactionIds: [...selectedIds], classification }, { onSuccess: () => { setSelectedIds(new Set()); toast(`${selectedIds.size} transactions classified`); } });
+  };
   const totalIn = rows.reduce((sum, row) => sum + row.amount_in, 0);
   const totalOut = rows.reduce((sum, row) => sum + row.amount_out, 0);
   const matched = rows.filter((row) => row.status === "matched");
@@ -925,7 +1009,7 @@ export function BankPage() {
     });
   };
 
-  const queries = [taxYearQuery, settingsQuery, batchQuery];
+  const queries = [taxYearQuery, settingsQuery, batchQuery, accountsQuery, rulesQuery];
   if (isLoading || queries.some((query) => query.isLoading))
     return <PageSkeleton rows={8} />;
   if (error || queries.some((query) => query.isError))
@@ -1005,6 +1089,10 @@ export function BankPage() {
           setTaxYear("all");
         }}
       >
+        <Select value={bankAccountId} onValueChange={setBankAccountId}>
+          <SelectTrigger className="w-44"><SelectValue placeholder="All accounts" /></SelectTrigger>
+          <SelectContent><SelectItem value="all">All accounts</SelectItem>{accounts.map((account) => <SelectItem key={account.id} value={String(account.id)}>{account.name}</SelectItem>)}</SelectContent>
+        </Select>
         <Select value={taxYear} onValueChange={setTaxYear}>
           <SelectTrigger className="w-36">
             <SelectValue />
@@ -1030,10 +1118,33 @@ export function BankPage() {
           </SelectContent>
         </Select>
       </FilterToolbar>
+      {selectedIds.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/30 bg-primary/5 p-3">
+          <span className="mr-2 text-sm font-semibold">{selectedIds.size} selected</span>
+          <Select value="action" onValueChange={(value) => { if (value !== "action") bulkClassifyRows(value); }}>
+            <SelectTrigger className="w-44"><SelectValue placeholder="Bulk classify" /></SelectTrigger>
+            <SelectContent><SelectItem value="action">Bulk classify</SelectItem><SelectItem value="owner_contribution">Owner contribution</SelectItem><SelectItem value="owner_withdrawal">Owner withdrawal</SelectItem><SelectItem value="transfer">Transfer</SelectItem><SelectItem value="loan">Loan</SelectItem><SelectItem value="refund">Refund</SelectItem><SelectItem value="ignored">Ignore</SelectItem></SelectContent>
+          </Select>
+          <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>Clear selection</Button>
+        </div>
+      )}
+      <section className="grid gap-4 rounded-md border bg-card p-4 lg:grid-cols-2">
+        <div className="space-y-3">
+          <h2 className="font-semibold">Bank accounts</h2>
+          <div className="flex flex-wrap gap-2"><Input value={newAccountName} onChange={(event) => setNewAccountName(event.target.value)} placeholder="Account name" /><Select value={newAccountType} onValueChange={setNewAccountType}><SelectTrigger className="w-36"><SelectValue /></SelectTrigger><SelectContent>{["current", "savings", "cash", "paypal", "stripe", "credit_card", "other"].map((value) => <SelectItem key={value} value={value}>{value.replace("_", " ")}</SelectItem>)}</SelectContent></Select><Button onClick={() => { if (newAccountName.trim()) { createAccount.mutate({ name: newAccountName, accountType: newAccountType, openingBalance: 0 }); setNewAccountName(""); } }} disabled={createAccount.isPending}>Add account</Button></div>
+          <p className="text-xs text-muted-foreground">Use separate accounts for your bank, cash, PayPal, Stripe, and cards.</p>
+        </div>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-2"><h2 className="font-semibold">Bank rules</h2><Button size="sm" variant="outline" onClick={() => void applyRules.mutateAsync()} disabled={applyRules.isPending}>Apply rules</Button></div>
+          <div className="grid gap-2 sm:grid-cols-4"><Input value={newRuleName} onChange={(event) => setNewRuleName(event.target.value)} placeholder="Rule name" /><Input value={newRulePattern} onChange={(event) => setNewRulePattern(event.target.value)} placeholder="Description pattern" /><Select value={newRuleClassification} onValueChange={setNewRuleClassification}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["owner_contribution", "owner_withdrawal", "transfer", "loan", "refund", "ignored"].map((value) => <SelectItem key={value} value={value}>{value.replace(/_/g, " ")}</SelectItem>)}</SelectContent></Select><Button onClick={() => { try { new RegExp(newRulePattern); } catch { toast("Enter a valid pattern"); return; } if (newRuleName.trim() && newRulePattern.trim()) { createRule.mutate({ name: newRuleName, description_pattern: newRulePattern, classification: newRuleClassification as BankRuleClassification }); setNewRuleName(""); setNewRulePattern(""); } }}>Add rule</Button></div>
+          {rules.length > 0 && <div className="flex flex-wrap gap-2">{rules.map((rule) => <Badge key={rule.id} variant="outline">{rule.name}: {rule.classification}<button className="ml-1" aria-label={`Delete ${rule.name}`} onClick={() => deleteRule.mutate(rule.id)}>×</button></Badge>)}</div>}
+        </div>
+      </section>
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(360px,0.7fr)]">
         <div className="overflow-x-auto rounded-md border bg-card">
           <div className="min-w-225">
-            <div className="grid grid-cols-[105px_minmax(230px,1fr)_115px_115px_105px_minmax(180px,0.8fr)_125px] gap-3 border-b bg-muted px-4 py-2 text-xs font-medium text-muted-foreground">
+            <div className="grid grid-cols-[32px_105px_minmax(230px,1fr)_115px_115px_105px_minmax(180px,0.8fr)_125px] gap-3 border-b bg-muted px-4 py-2 text-xs font-medium text-muted-foreground">
+              <input type="checkbox" aria-label="Select all unmatched transactions" checked={unmatchedIds.length > 0 && unmatchedIds.every((id) => selectedIds.has(id))} onChange={() => setSelectedIds((current) => unmatchedIds.every((id) => current.has(id)) ? new Set() : new Set(unmatchedIds))} />
               <span>Date</span>
               <span>Description</span>
               <span className="text-right">Money in</span>
@@ -1060,8 +1171,9 @@ export function BankPage() {
               rows.map((row) => (
                 <div
                   key={row.id}
-                  className={`grid grid-cols-[105px_minmax(230px,1fr)_115px_115px_105px_minmax(180px,0.8fr)_125px] items-center gap-3 border-b px-4 py-3 text-sm last:border-0 ${selected?.id === row.id ? "bg-accent/70" : "hover:bg-muted/40"}`}
+                  className={`grid grid-cols-[32px_105px_minmax(230px,1fr)_115px_115px_105px_minmax(180px,0.8fr)_125px] items-center gap-3 border-b px-4 py-3 text-sm last:border-0 ${selected?.id === row.id ? "bg-accent/70" : "hover:bg-muted/40"}`}
                 >
+                  <input type="checkbox" aria-label={`Select ${row.description}`} checked={selectedIds.has(row.id)} disabled={row.status !== "unmatched"} onChange={() => toggleSelected(row.id)} />
                   <span className="text-muted-foreground">
                     {row.transaction_date}
                   </span>
@@ -1102,6 +1214,29 @@ export function BankPage() {
                   <span className="flex justify-end gap-1">
                     {row.status === "unmatched" && (
                       <>
+                        <Select
+                          value="classify"
+                          onValueChange={(value) => {
+                            if (value !== "classify")
+                              classify.mutate(
+                                { transactionId: row.id, classification: value },
+                                { onSuccess: () => toast("Transaction classified") },
+                              );
+                          }}
+                        >
+                          <SelectTrigger className="h-8 w-28 text-xs">
+                            <SelectValue placeholder="Classify" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="classify">Classify</SelectItem>
+                            <SelectItem value="owner_contribution">Owner contribution</SelectItem>
+                            <SelectItem value="owner_withdrawal">Owner withdrawal</SelectItem>
+                            <SelectItem value="transfer">Transfer</SelectItem>
+                            <SelectItem value="loan">Loan</SelectItem>
+                            <SelectItem value="refund">Refund</SelectItem>
+                            <SelectItem value="ignored">Ignore</SelectItem>
+                          </SelectContent>
+                        </Select>
                         <Button
                           size="icon"
                           variant="ghost"

@@ -54,6 +54,7 @@ import {
 import { useDashboardData } from "@/lib/queries/dashboard";
 import { useVatOverview } from "@/lib/queries/vat";
 import { useReminderCentre } from "@/lib/queries/reminders";
+import { useAdvancedTaxData } from "@/lib/queries/advanced-tax";
 import { useAuditLog } from "@/lib/queries/power-features";
 import { useSetAppSetting, useTaxYearConfigs } from "@/lib/queries/settings";
 import { useAppStore } from "@/stores/app-store";
@@ -188,6 +189,7 @@ export function DashboardPage() {
     isLoading: reminderLoading,
     error: reminderError,
   } = useReminderCentre(currentTaxYear);
+  const advancedTax = useAdvancedTaxData(currentTaxYear);
   const { data: recentActivity } = useAuditLog("all", "all", 5);
   const saveSetting = useSetAppSetting();
   const [taxPot, setTaxPot] = useState("0");
@@ -205,7 +207,7 @@ export function DashboardPage() {
     });
   };
 
-  if (isLoading || vatQuery.isLoading || reminderLoading)
+  if (isLoading || vatQuery.isLoading || reminderLoading || advancedTax.isLoading)
     return <LoadingSpinner />;
   if (
     error ||
@@ -213,7 +215,9 @@ export function DashboardPage() {
     vatQuery.error ||
     !vatQuery.data ||
     reminderError ||
-    !reminderData
+    !reminderData ||
+    advancedTax.error ||
+    !advancedTax.data
   ) {
     return (
       <Alert variant="destructive">
@@ -318,8 +322,8 @@ export function DashboardPage() {
           value={data.income}
           detail={
             data.accountingBasis === "cash"
-              ? "Payments received"
-              : "Issued invoices"
+              ? "Gross payments received"
+              : "Gross issued invoices"
           }
           icon={BadgePoundSterling}
           tone="text-emerald-700 dark:text-emerald-400"
@@ -328,14 +332,14 @@ export function DashboardPage() {
         <MetricCard
           title="Money out"
           value={data.expenses}
-          detail="Allowable costs and mileage"
+          detail="Allowable business costs; CIS is not an expense"
           icon={Receipt}
           href="/expenses"
         />
         <MetricCard
           title="Profit"
           value={data.profit}
-          detail="Income less allowable expenses"
+          detail="Gross income less allowable expenses; before CIS tax credit"
           icon={TrendingUp}
           tone={
             data.profit >= 0
@@ -354,6 +358,107 @@ export function DashboardPage() {
           href="/tax"
         />
       </section>
+
+      <p className="text-xs text-muted-foreground">
+        CIS payments are included at their gross amount in income and profit.
+        CIS withheld is tax already paid, not money out or a business expense.
+      </p>
+
+      <section className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(260px,0.6fr)]">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Paid CIS</CardTitle>
+            <CardDescription>
+              CIS tax deducted by contractors from your recorded payments.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div>
+              <p className="text-xs text-muted-foreground">CIS deducted</p>
+              <p className="mt-1 text-2xl font-semibold text-amber-700 dark:text-amber-400">
+                {money.format(advancedTax.data.cisReceived)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Cash received</p>
+              <p className="mt-1 text-2xl font-semibold">{money.format(data.cashReceived)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Tax liability</p>
+              <p className="mt-1 text-2xl font-semibold">
+                {money.format(taxEstimate.totalLiability)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Still to reserve</p>
+              <p className="mt-1 text-2xl font-semibold">
+                {money.format(taxStillNeeded)}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">CIS treatment</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <p>Gross CIS income increases turnover and profit.</p>
+            <p>CIS deducted reduces estimated tax due. It is not an expense.</p>
+            <Button asChild size="sm" variant="outline" className="w-full">
+              <Link to="/income">Review CIS income</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Estimated available cash</CardTitle>
+            <CardDescription>
+              A practical cash view after money received, paid business costs,
+              and the current tax reserve.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-3">
+            <div>
+              <p className="text-xs text-muted-foreground">Cash received</p>
+              <p className="mt-1 text-2xl font-semibold text-emerald-700 dark:text-emerald-400">{money.format(data.cashReceived)}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Includes post-CIS receipts</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Expenses paid</p>
+              <p className="mt-1 text-2xl font-semibold">{money.format(data.cashExpenses)}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Actual recorded business payments</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Available after reserve</p>
+              <p className={`mt-1 text-2xl font-semibold ${data.cashReceived - data.cashExpenses - taxStillNeeded >= 0 ? "text-blue-700 dark:text-blue-400" : "text-destructive"}`}>{money.format(data.cashReceived - data.cashExpenses - taxStillNeeded)}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Cash received less expenses and estimated tax reserve</p>
+            </div>
+          </CardContent>
+          <CardContent className="border-t pt-3 text-xs text-muted-foreground">
+            This is an estimate, not your bank balance. It does not include
+            personal spending, loans, transfers, unimported accounts, or future
+            bills.
+          </CardContent>
+        </Card>
+      </section>
+
+      <div className="flex flex-wrap gap-2">
+        <Button asChild size="sm">
+          <Link to="/income?new=income">
+            <Plus className="mr-2 h-4 w-4" />
+            Record direct income
+          </Link>
+        </Button>
+        <Button asChild size="sm" variant="outline">
+          <Link to="/bank?status=unmatched">
+            <WalletCards className="mr-2 h-4 w-4" />
+            Review bank activity
+          </Link>
+        </Button>
+      </div>
 
       <section className="grid gap-4 xl:grid-cols-[minmax(280px,0.75fr)_minmax(0,2fr)]">
         <Card>
@@ -765,6 +870,57 @@ export function DashboardPage() {
                 {potProgress.toFixed(0)}% funded ·{" "}
                 {money.format(Math.max(0, taxStillNeeded - potAmount))}{" "}
                 remaining
+              </p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Tax may show £0 until profit exceeds the configured Personal
+                Allowance of {money.format(data.config.personal_allowance)}.
+                National Insurance can apply separately.
+              </p>
+            </div>
+            <div className="mt-5 rounded-md border bg-muted/25 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold">Live tax calculator</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Guide based on your recorded {currentTaxYear} figures.
+                  </p>
+                </div>
+                <Button asChild size="sm" variant="outline">
+                  <Link to="/tax">Open Self Assessment</Link>
+                </Button>
+              </div>
+              <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
+                <div className="flex justify-between gap-3">
+                  <dt className="text-muted-foreground">Income</dt>
+                  <dd className="font-medium tabular-nums">{money.format(data.income)}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-muted-foreground">Allowable expenses</dt>
+                  <dd className="font-medium tabular-nums">{money.format(data.expenses)}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-muted-foreground">Recorded profit</dt>
+                  <dd className="font-medium tabular-nums">{money.format(data.profit)}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-muted-foreground">Estimated liability</dt>
+                  <dd className="font-medium tabular-nums">{money.format(taxEstimate.totalLiability)}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-muted-foreground">Tax already deducted</dt>
+                  <dd className="font-medium tabular-nums">{money.format(taxEstimate.taxDeducted)}</dd>
+                </div>
+                <div className="flex justify-between gap-3">
+                  <dt className="text-muted-foreground">CIS deducted</dt>
+                  <dd className="font-medium tabular-nums">{money.format(advancedTax.data.cisReceived)}</dd>
+                </div>
+                <div className="flex justify-between gap-3 border-t pt-2 font-semibold sm:border-t-0 sm:pt-0">
+                  <dt>Estimated amount to reserve</dt>
+                  <dd className="tabular-nums">{money.format(taxStillNeeded)}</dd>
+                </div>
+              </dl>
+              <p className="mt-3 text-[11px] text-muted-foreground">
+                Estimate only. Check the full Self Assessment calculation and confirm figures with HMRC or an accountant.
               </p>
             </div>
             <EstimateNote />

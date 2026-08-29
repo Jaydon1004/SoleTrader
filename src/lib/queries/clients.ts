@@ -47,6 +47,16 @@ export interface ClientPayment {
   notes: string;
 }
 
+export interface ClientDirectIncome {
+  id: number;
+  description: string;
+  income_date: string;
+  gross_amount: number;
+  amount: number;
+  cis_deduction_amount: number;
+  payment_method: string;
+}
+
 export interface ClientInvoiceSummary {
   id: number;
   reference: string;
@@ -142,7 +152,7 @@ export function useClientWorkspace(clientId: number | null) {
     queryKey: ["client-workspace", clientId],
     enabled: clientId !== null,
     queryFn: async () => {
-      const [invoices, documents, activity] = await Promise.all([
+      const [invoices, directIncome, documents, activity] = await Promise.all([
         query<ClientInvoiceSummary>(
           `SELECT i.id,
             CASE WHEN i.source_type = 'self_billed' THEN i.external_reference ELSE i.invoice_number END AS reference,
@@ -150,6 +160,11 @@ export function useClientWorkspace(clientId: number | null) {
             MAX(0, i.total - i.amount_paid - COALESCE((SELECT SUM(amount) FROM credit_notes WHERE invoice_id = i.id), 0)) AS balance_due
            FROM invoices i WHERE i.client_id = ? AND i.deleted_at IS NULL
            ORDER BY i.issue_date DESC, i.id DESC`,
+          [clientId],
+        ),
+        query<ClientDirectIncome>(
+          `SELECT id, description, income_date, gross_amount, amount, cis_deduction_amount, payment_method
+           FROM direct_income WHERE client_id = ? AND deleted_at IS NULL ORDER BY income_date DESC, id DESC`,
           [clientId],
         ),
         query<ClientDocumentSummary>(
@@ -168,7 +183,7 @@ export function useClientWorkspace(clientId: number | null) {
           [clientId, clientId],
         ),
       ]);
-      return { invoices, documents, activity };
+      return { invoices, directIncome, documents, activity };
     },
   });
 }

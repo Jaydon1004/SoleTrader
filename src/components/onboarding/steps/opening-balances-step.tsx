@@ -23,7 +23,10 @@ export function OpeningBalancesStep({ data, onChange }: Props) {
         <AlertDescription>
           <strong>Starting mid-year?</strong> Enter what you've already earned
           and spent in this tax year (6 April onwards) so your totals are
-          accurate from day one. Leave blank if you're starting from zero.
+          accurate from day one. For a detailed record, leave these totals blank
+          and add each earlier income or expense from the Income and Expenses
+          pages using its original payment date. Do not enter the same records
+          here as well. Leave blank if you're starting from zero.
         </AlertDescription>
       </Alert>
 

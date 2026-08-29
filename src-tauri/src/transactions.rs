@@ -50,6 +50,87 @@ pub struct BankPaymentInput {
 }
 
 #[derive(Deserialize)]
+pub struct DirectIncomeInput {
+    workspace_id: String,
+    income_date: String,
+    description: String,
+    income_type: String,
+    amount: f64,
+    gross_amount: f64,
+    cis_rate: f64,
+    cis_deduction_amount: f64,
+    cis_party_name: String,
+    cis_party_utr: String,
+    vat_amount: f64,
+    vat_rate: Option<f64>,
+    payment_method: String,
+    client_id: Option<i64>,
+    notes: String,
+    is_recurring: bool,
+    recurring_frequency: Option<String>,
+    recurring_next_date: Option<String>,
+    recurring_auto_create: bool,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateDirectIncomeInput {
+    id: i64,
+    #[serde(flatten)]
+    income: DirectIncomeInput,
+}
+
+#[derive(Deserialize)]
+pub struct BankIncomeInput {
+    workspace_id: String,
+    bank_transaction_id: i64,
+    description: String,
+    income_type: String,
+    vat_amount: f64,
+    vat_rate: Option<f64>,
+    payment_method: String,
+    client_id: Option<i64>,
+    notes: String,
+    gross_amount: Option<f64>,
+    cis_rate: Option<f64>,
+    cis_deduction_amount: Option<f64>,
+    cis_party_name: Option<String>,
+    cis_party_utr: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct BankClassificationInput {
+    workspace_id: String,
+    bank_transaction_id: i64,
+    classification: String,
+}
+
+#[derive(Deserialize)]
+pub struct BulkBankClassificationInput {
+    workspace_id: String,
+    bank_transaction_ids: Vec<i64>,
+    classification: String,
+}
+
+#[derive(Deserialize)]
+pub struct LinkTransferInput {
+    workspace_id: String,
+    first_transaction_id: i64,
+    second_transaction_id: i64,
+}
+
+#[derive(Deserialize)]
+pub struct SplitBankInput {
+    workspace_id: String,
+    bank_transaction_id: i64,
+    first_description: String,
+    first_amount: f64,
+    first_classification: String,
+    second_description: String,
+    second_amount: f64,
+    second_classification: String,
+}
+
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LinkDocumentInput {
     workspace_id: String,
@@ -155,12 +236,15 @@ fn statement_is_allowed(sql: &str) -> bool {
     matches!(
         table.as_str(),
         "app_settings"
+            | "bank_accounts"
+            | "bank_rules"
             | "bank_reconciliation_settings"
             | "bank_transactions"
             | "capital_assets"
             | "cis_transactions"
             | "clients"
             | "documents"
+            | "direct_income"
             | "expense_categories"
             | "expenses"
             | "invoice_settings"
@@ -302,6 +386,175 @@ pub async fn create_expense_from_bank(
         .map_err(|error| error.to_string())?;
     pool.close().await;
     Ok(expense_id)
+}
+
+async fn insert_direct_income(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    input: &BankIncomeInput,
+    date: &str,
+    amount: f64,
+    gross_amount: f64,
+    cis_rate: f64,
+    cis_deduction_amount: f64,
+    cis_party_name: &str,
+    cis_party_utr: &str,
+    tax_year: &str,
+    bank_transaction_id: Option<i64>,
+) -> Result<i64, String> {
+    if input.description.trim().is_empty()
+        || !matches!(input.income_type.as_str(), "sale" | "cis_subcontractor" | "other_business_income" | "grant" | "refund" | "other")
+        || amount <= 0.0 || gross_amount <= 0.0
+        || cis_deduction_amount < 0.0 || cis_deduction_amount > gross_amount
+        || (amount - gross_amount + cis_deduction_amount).abs() > 0.01
+        || !matches!(cis_rate, 0.0 | 20.0 | 30.0)
+        || input.vat_amount < 0.0
+        || input.vat_amount > amount
+        || input.vat_rate.is_some_and(|rate| !(0.0..=100.0).contains(&rate))
+        || NaiveDate::parse_from_str(date, "%Y-%m-%d").is_err()
+    {
+        return Err("Direct income contains invalid details.".into());
+    }
+    let income = sqlx::query("INSERT INTO direct_income (income_date, description, income_type, amount, gross_amount, cis_rate, cis_deduction_amount, cis_party_name, cis_party_utr, vat_amount, vat_rate, payment_method, client_id, notes, tax_year, bank_transaction_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .bind(date).bind(input.description.trim()).bind(&input.income_type).bind(amount)
+        .bind(gross_amount).bind(cis_rate).bind(cis_deduction_amount).bind(cis_party_name.trim()).bind(cis_party_utr.trim())
+        .bind(input.vat_amount).bind(input.vat_rate).bind(input.payment_method.trim())
+        .bind(input.client_id).bind(input.notes.trim()).bind(tax_year).bind(bank_transaction_id)
+        .execute(&mut **transaction).await.map_err(|error| error.to_string())?;
+    Ok(income.last_insert_rowid())
+}
+
+#[tauri::command]
+pub async fn create_direct_income(app: AppHandle, input: DirectIncomeInput) -> Result<i64, String> {
+    let path = workspace_database_path(&app, &input.workspace_id)?;
+    let pool = SqlitePoolOptions::new().max_connections(1).connect_with(SqliteConnectOptions::new().filename(path).foreign_keys(true)).await.map_err(|error| error.to_string())?;
+    let mut transaction = pool.begin().await.map_err(|error| error.to_string())?;
+    let tax_year = crate::transactions::tax_year_for_date(&input.income_date)?;
+    let bank_input = BankIncomeInput { workspace_id: input.workspace_id, bank_transaction_id: 0, description: input.description, income_type: input.income_type, vat_amount: input.vat_amount, vat_rate: input.vat_rate, payment_method: input.payment_method, client_id: input.client_id, notes: input.notes, gross_amount: None, cis_rate: None, cis_deduction_amount: None, cis_party_name: None, cis_party_utr: None };
+    let id = insert_direct_income(&mut transaction, &bank_input, &input.income_date, input.amount, input.gross_amount, input.cis_rate, input.cis_deduction_amount, &input.cis_party_name, &input.cis_party_utr, &tax_year, None).await?;
+    if input.is_recurring {
+        sqlx::query("UPDATE direct_income SET is_recurring = 1, recurring_frequency = ?, recurring_next_date = ?, recurring_auto_create = ? WHERE id = ?")
+            .bind(input.recurring_frequency).bind(input.recurring_next_date).bind(input.recurring_auto_create).bind(id).execute(&mut *transaction).await.map_err(|error| error.to_string())?;
+    }
+    transaction.commit().await.map_err(|error| error.to_string())?;
+    pool.close().await;
+    Ok(id)
+}
+
+#[tauri::command]
+pub async fn update_direct_income(app: AppHandle, input: UpdateDirectIncomeInput) -> Result<(), String> {
+    let path = workspace_database_path(&app, &input.income.workspace_id)?;
+    let pool = SqlitePoolOptions::new().max_connections(1).connect_with(SqliteConnectOptions::new().filename(path).foreign_keys(true)).await.map_err(|error| error.to_string())?;
+    let mut transaction = pool.begin().await.map_err(|error| error.to_string())?;
+    let tax_year = tax_year_for_date(&input.income.income_date)?;
+    let data = &input.income;
+    let helper = BankIncomeInput { workspace_id: data.workspace_id.clone(), bank_transaction_id: 0, description: data.description.clone(), income_type: data.income_type.clone(), vat_amount: data.vat_amount, vat_rate: data.vat_rate, payment_method: data.payment_method.clone(), client_id: data.client_id, notes: data.notes.clone(), gross_amount: None, cis_rate: None, cis_deduction_amount: None, cis_party_name: None, cis_party_utr: None };
+    if data.description.trim().is_empty() || !matches!(data.income_type.as_str(), "sale" | "cis_subcontractor" | "other_business_income" | "grant" | "refund" | "other") || data.amount <= 0.0 || data.gross_amount <= 0.0 || data.cis_deduction_amount < 0.0 || data.cis_deduction_amount > data.gross_amount || (data.amount - data.gross_amount + data.cis_deduction_amount).abs() > 0.01 || !matches!(data.cis_rate, 0.0 | 20.0 | 30.0) || data.vat_amount < 0.0 || data.vat_amount > data.amount { return Err("Direct income contains invalid details.".into()); }
+    let changed = sqlx::query("UPDATE direct_income SET income_date = ?, description = ?, income_type = ?, amount = ?, gross_amount = ?, cis_rate = ?, cis_deduction_amount = ?, cis_party_name = ?, cis_party_utr = ?, vat_amount = ?, vat_rate = ?, payment_method = ?, client_id = ?, notes = ?, is_recurring = ?, recurring_frequency = ?, recurring_next_date = ?, recurring_auto_create = ?, tax_year = ?, updated_at = datetime('now') WHERE id = ? AND deleted_at IS NULL")
+        .bind(&data.income_date).bind(data.description.trim()).bind(&data.income_type).bind(data.amount).bind(data.gross_amount).bind(data.cis_rate).bind(data.cis_deduction_amount).bind(data.cis_party_name.trim()).bind(data.cis_party_utr.trim()).bind(data.vat_amount).bind(data.vat_rate).bind(data.payment_method.trim()).bind(data.client_id).bind(data.notes.trim()).bind(data.is_recurring).bind(if data.is_recurring { data.recurring_frequency.as_deref() } else { None }).bind(if data.is_recurring { data.recurring_next_date.as_deref() } else { None }).bind(data.is_recurring && data.recurring_auto_create).bind(tax_year).bind(input.id).execute(&mut *transaction).await.map_err(|error| error.to_string())?;
+    drop(helper);
+    if changed.rows_affected() != 1 { return Err("Direct income was not found or has been deleted.".into()); }
+    transaction.commit().await.map_err(|error| error.to_string())?;
+    pool.close().await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn create_direct_income_from_bank(app: AppHandle, input: BankIncomeInput) -> Result<i64, String> {
+    let path = workspace_database_path(&app, &input.workspace_id)?;
+    let pool = SqlitePoolOptions::new().max_connections(1).connect_with(SqliteConnectOptions::new().filename(path).foreign_keys(true)).await.map_err(|error| error.to_string())?;
+    let mut transaction = pool.begin().await.map_err(|error| error.to_string())?;
+    let bank = sqlx::query_as::<_, (String, f64, String, String)>("SELECT transaction_date, amount_in, source_file, tax_year FROM bank_transactions WHERE id = ? AND status = 'unmatched'")
+        .bind(input.bank_transaction_id).fetch_optional(&mut *transaction).await.map_err(|error| error.to_string())?.ok_or("The bank transaction is no longer available for matching.")?;
+    if bank.1 <= 0.0 { return Err("Only money-in transactions can create direct income.".into()); }
+    let deduction = input.cis_deduction_amount.unwrap_or(0.0);
+    let gross = input.gross_amount.unwrap_or(bank.1 + deduction);
+    let cis_rate = input.cis_rate.unwrap_or(0.0);
+    let id = insert_direct_income(&mut transaction, &input, &bank.0, bank.1, gross, cis_rate, deduction, input.cis_party_name.as_deref().unwrap_or(""), input.cis_party_utr.as_deref().unwrap_or(""), &bank.3, Some(input.bank_transaction_id)).await?;
+    let claimed = sqlx::query("UPDATE bank_transactions SET matched_income_id = ?, status = 'matched', match_confidence = 'manual', updated_at = datetime('now') WHERE id = ? AND status = 'unmatched'")
+        .bind(id).bind(input.bank_transaction_id).execute(&mut *transaction).await.map_err(|error| error.to_string())?;
+    if claimed.rows_affected() != 1 { return Err("The bank transaction was matched by another operation.".into()); }
+    transaction.commit().await.map_err(|error| error.to_string())?;
+    pool.close().await;
+    Ok(id)
+}
+
+#[tauri::command]
+pub async fn classify_bank_transaction(app: AppHandle, input: BankClassificationInput) -> Result<(), String> {
+    if !matches!(input.classification.as_str(), "owner_contribution" | "owner_withdrawal" | "transfer" | "loan" | "refund" | "ignored") {
+        return Err("That bank classification is not supported.".into());
+    }
+    let path = workspace_database_path(&app, &input.workspace_id)?;
+    let pool = SqlitePoolOptions::new().max_connections(1).connect_with(SqliteConnectOptions::new().filename(path).foreign_keys(true)).await.map_err(|error| error.to_string())?;
+    let changed = sqlx::query("UPDATE bank_transactions SET matched_invoice_id = NULL, matched_payment_id = NULL, matched_expense_id = NULL, matched_income_id = NULL, status = ?, classification = ?, match_confidence = 'manual', updated_at = datetime('now') WHERE id = ?")
+        .bind(if input.classification == "ignored" { "ignored" } else { "matched" }).bind(input.classification).bind(input.bank_transaction_id).execute(&pool).await.map_err(|error| error.to_string())?;
+    pool.close().await;
+    if changed.rows_affected() != 1 { return Err("The bank transaction could not be classified.".into()); }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn bulk_classify_bank_transactions(
+    app: AppHandle,
+    input: BulkBankClassificationInput,
+) -> Result<u64, String> {
+    if input.bank_transaction_ids.is_empty() || input.bank_transaction_ids.len() > 1000 {
+        return Err("Select between 1 and 1000 bank transactions.".into());
+    }
+    if !matches!(input.classification.as_str(), "owner_contribution" | "owner_withdrawal" | "transfer" | "loan" | "refund" | "ignored") {
+        return Err("That bank classification is not supported.".into());
+    }
+    let path = workspace_database_path(&app, &input.workspace_id)?;
+    let pool = SqlitePoolOptions::new().max_connections(1).connect_with(SqliteConnectOptions::new().filename(path).foreign_keys(true)).await.map_err(|error| error.to_string())?;
+    let mut transaction = pool.begin().await.map_err(|error| error.to_string())?;
+    let status = if input.classification == "ignored" { "ignored" } else { "matched" };
+    let mut changed = 0_u64;
+    for id in input.bank_transaction_ids {
+        changed += sqlx::query("UPDATE bank_transactions SET matched_invoice_id = NULL, matched_payment_id = NULL, matched_expense_id = NULL, matched_income_id = NULL, status = ?, classification = ?, match_confidence = 'manual', updated_at = datetime('now') WHERE id = ? AND status = 'unmatched'")
+            .bind(status).bind(&input.classification).bind(id).execute(&mut *transaction).await.map_err(|error| error.to_string())?.rows_affected();
+    }
+    transaction.commit().await.map_err(|error| error.to_string())?;
+    pool.close().await;
+    Ok(changed)
+}
+
+#[tauri::command]
+pub async fn link_bank_transfer(app: AppHandle, input: LinkTransferInput) -> Result<(), String> {
+    if input.first_transaction_id == input.second_transaction_id { return Err("A transfer needs two different transactions.".into()); }
+    let path = workspace_database_path(&app, &input.workspace_id)?;
+    let pool = SqlitePoolOptions::new().max_connections(1).connect_with(SqliteConnectOptions::new().filename(path).foreign_keys(true)).await.map_err(|error| error.to_string())?;
+    let mut transaction = pool.begin().await.map_err(|error| error.to_string())?;
+    let pair_id = sqlx::query_scalar::<_, i64>("SELECT id FROM bank_transactions WHERE id IN (?, ?) ORDER BY id LIMIT 1")
+        .bind(input.first_transaction_id).bind(input.second_transaction_id).fetch_optional(&mut *transaction).await.map_err(|error| error.to_string())?.ok_or("Both bank transactions must exist.")?;
+    let changed = sqlx::query("UPDATE bank_transactions SET transfer_pair_id = ?, matched_invoice_id = NULL, matched_payment_id = NULL, matched_expense_id = NULL, matched_income_id = NULL, classification = 'transfer', status = 'matched', match_confidence = 'manual', updated_at = datetime('now') WHERE id IN (?, ?)")
+        .bind(pair_id).bind(input.first_transaction_id).bind(input.second_transaction_id).execute(&mut *transaction).await.map_err(|error| error.to_string())?;
+    if changed.rows_affected() != 2 { return Err("Both bank transactions must be available for transfer pairing.".into()); }
+    transaction.commit().await.map_err(|error| error.to_string())?;
+    pool.close().await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn split_bank_transaction(app: AppHandle, input: SplitBankInput) -> Result<(), String> {
+    let valid_kind = |kind: &str| matches!(kind, "direct_income" | "expense" | "owner_contribution" | "owner_withdrawal" | "transfer" | "loan" | "refund" | "ignored");
+    if input.first_description.trim().is_empty() || input.second_description.trim().is_empty()
+        || !input.first_amount.is_finite() || !input.second_amount.is_finite()
+        || input.first_amount <= 0.0 || input.second_amount <= 0.0
+        || !valid_kind(&input.first_classification) || !valid_kind(&input.second_classification) {
+        return Err("Split entries contain invalid details.".into());
+    }
+    let path = workspace_database_path(&app, &input.workspace_id)?;
+    let pool = SqlitePoolOptions::new().max_connections(1).connect_with(SqliteConnectOptions::new().filename(path).foreign_keys(true)).await.map_err(|error| error.to_string())?;
+    let mut transaction = pool.begin().await.map_err(|error| error.to_string())?;
+    let bank = sqlx::query_as::<_, (f64, f64)>("SELECT amount_in, amount_out FROM bank_transactions WHERE id = ? AND status = 'unmatched'").bind(input.bank_transaction_id).fetch_optional(&mut *transaction).await.map_err(|error| error.to_string())?.ok_or("The bank transaction is no longer available for splitting.")?;
+    let total = if bank.0 > 0.0 { bank.0 } else { bank.1 };
+    if (input.first_amount + input.second_amount - total).abs() > 0.005 { return Err("Split amounts must equal the bank transaction exactly.".into()); }
+    for (description, amount, classification) in [(input.first_description, input.first_amount, input.first_classification), (input.second_description, input.second_amount, input.second_classification)] {
+        sqlx::query("INSERT INTO bank_transaction_splits (bank_transaction_id, description, amount, classification) VALUES (?, ?, ?, ?)").bind(input.bank_transaction_id).bind(description.trim()).bind(amount).bind(classification).execute(&mut *transaction).await.map_err(|error| error.to_string())?;
+    }
+    sqlx::query("UPDATE bank_transactions SET status = 'matched', classification = 'unclassified', match_confidence = 'manual', updated_at = datetime('now') WHERE id = ? AND status = 'unmatched'").bind(input.bank_transaction_id).execute(&mut *transaction).await.map_err(|error| error.to_string())?;
+    transaction.commit().await.map_err(|error| error.to_string())?;
+    pool.close().await;
+    Ok(())
 }
 
 #[tauri::command]

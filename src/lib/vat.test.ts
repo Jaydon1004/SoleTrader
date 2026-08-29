@@ -138,4 +138,19 @@ describe("self-billed invoice VAT", () => {
     );
     expect(result).toMatchObject({ box1: 150, box5: 150, box6: 1200 });
   });
+
+  it("includes direct business income in the return", () => {
+    const result = calculateReturn(
+      period,
+      { vat_scheme: "standard", vat_flat_rate_percent: 0 } as UserProfile,
+      config,
+      [],
+      [],
+      [],
+      [],
+      [],
+      [{ income_date: "2026-07-20", amount: 120, vat_amount: 20 }],
+    );
+    expect(result).toMatchObject({ box1: 20, box5: 20, box6: 100 });
+  });
 });

@@ -4,6 +4,7 @@ import {
   Archive,
   ArchiveRestore,
   Car,
+  Copy,
   Pencil,
   Plus,
   Receipt,
@@ -25,6 +26,7 @@ import {
 import { LoadingSpinner } from "@/components/loading";
 import { VehicleDialog } from "@/components/vehicles/vehicle-dialog";
 import { MileageDialog } from "@/components/vehicles/mileage-dialog";
+import { MonthlyMileageDialog } from "@/components/vehicles/monthly-mileage-dialog";
 import { VehicleCostDialog } from "@/components/vehicles/vehicle-cost-dialog";
 import {
   useArchiveVehicle,
@@ -68,10 +70,13 @@ export function VehiclesPage() {
   const [vehicleOpen, setVehicleOpen] = useState(false);
   const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
   const [mileageOpen, setMileageOpen] = useState(false);
+  const [monthlyMileageOpen, setMonthlyMileageOpen] = useState(false);
   const [editingMileage, setEditingMileage] = useState<MileageLog | null>(null);
+  const [copyingMileage, setCopyingMileage] = useState(false);
   useEffect(() => {
     if (searchParams.get("new") !== "mileage") return;
     setEditingMileage(null);
+    setCopyingMileage(false);
     setMileageOpen(true);
     const next = new URLSearchParams(searchParams);
     next.delete("new");
@@ -321,19 +326,14 @@ export function VehiclesPage() {
         </div>
         <TabsContent value="mileage" className="space-y-3">
           <div className="flex justify-end">
-            <Button
-              onClick={() => {
-                setEditingMileage(null);
-                setMileageOpen(true);
-              }}
-              disabled={
-                !activeVehicles.some(
-                  (vehicle) => vehicle.cost_method === "mileage",
-                )
-              }
-            >
-              <Plus className="mr-2 h-4 w-4" /> Log journey
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={() => setMonthlyMileageOpen(true)} disabled={!activeVehicles.some((vehicle) => vehicle.cost_method === "mileage")}>
+                <Plus className="mr-2 h-4 w-4" /> Add monthly total
+              </Button>
+              <Button onClick={() => { setEditingMileage(null); setCopyingMileage(false); setMileageOpen(true); }} disabled={!activeVehicles.some((vehicle) => vehicle.cost_method === "mileage")}>
+                <Plus className="mr-2 h-4 w-4" /> Log journey
+              </Button>
+            </div>
           </div>
           <div className="overflow-x-auto rounded-md border">
             <div className="min-w-205">
@@ -359,6 +359,7 @@ export function VehiclesPage() {
                     className="min-w-0 text-left"
                     onClick={() => {
                       setEditingMileage(log);
+                      setCopyingMileage(false);
                       setMileageOpen(true);
                     }}
                   >
@@ -394,6 +395,18 @@ export function VehiclesPage() {
                       }}
                     >
                       <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Copy journey ${log.purpose}`}
+                      onClick={() => {
+                        setEditingMileage({ ...log, date: "" });
+                        setCopyingMileage(true);
+                        setMileageOpen(true);
+                      }}
+                    >
+                      <Copy className="h-4 w-4" />
                     </Button>
                     <Button
                       variant="ghost"
@@ -514,11 +527,17 @@ export function VehiclesPage() {
         open={mileageOpen}
         onOpenChange={(open) => {
           setMileageOpen(open);
-          if (!open) setEditingMileage(null);
+          if (!open) { setEditingMileage(null); setCopyingMileage(false); }
         }}
         vehicles={activeVehicles}
         log={editingMileage}
+        copy={copyingMileage}
         currentTaxYear={taxYear}
+      />
+      <MonthlyMileageDialog
+        open={monthlyMileageOpen}
+        onOpenChange={setMonthlyMileageOpen}
+        vehicles={activeVehicles}
       />
       <VehicleCostDialog
         open={costOpen}

@@ -210,10 +210,11 @@ async fn import_at(path: &Path, input: ImportBankInput) -> Result<ImportBankResu
             } else {
                 (None, None, "")
             };
-        sqlx::query("INSERT INTO bank_transactions (transaction_date, description, amount_in, amount_out, balance, matched_invoice_id, matched_expense_id, matched_payment_id, status, source_file, hash, import_batch_id, tax_year, match_confidence, raw_data, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))")
+        let classification = if candidate_id.is_none() { "unclassified" } else if incoming { "invoice_payment" } else { "expense" };
+        sqlx::query("INSERT INTO bank_transactions (transaction_date, description, amount_in, amount_out, balance, matched_invoice_id, matched_expense_id, matched_payment_id, status, classification, source_file, hash, import_batch_id, tax_year, match_confidence, raw_data, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))")
             .bind(&row.transaction_date).bind(row.description.trim()).bind(row.amount_in).bind(row.amount_out).bind(row.balance)
             .bind(if incoming { record_id } else { None }).bind(if incoming { None } else { record_id }).bind(if incoming { candidate_id } else { None })
-            .bind(if candidate_id.is_some() { "matched" } else { "unmatched" }).bind(input.source_file.trim()).bind(&row.fingerprint).bind(batch_id)
+            .bind(if candidate_id.is_some() { "matched" } else { "unmatched" }).bind(classification).bind(input.source_file.trim()).bind(&row.fingerprint).bind(batch_id)
             .bind(tax_year_for_date(&row.transaction_date)?).bind(confidence).bind(&row.raw_data).execute(&mut *transaction).await.map_err(|error| error.to_string())?;
     }
     transaction

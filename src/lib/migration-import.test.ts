@@ -73,4 +73,22 @@ describe("spreadsheet migration mapping", () => {
       )[0].error,
     ).toContain("Invalid date");
   });
+
+  it("maps historical direct income into the correct tax year", () => {
+    const mapping = suggestMigrationMapping("income", [
+      "Payment date",
+      "Description",
+      "Gross",
+      "VAT",
+      "Payment method",
+    ]);
+    const row = mapMigrationRows("income", [{
+      "Payment date": "05/04/2026",
+      Description: "Completed job",
+      Gross: "£120.00",
+      VAT: "20",
+      "Payment method": "Bank transfer",
+    }], mapping)[0];
+    expect(row).toMatchObject({ values: { date: "2026-04-05", amount: 120, vat: 20, taxYear: "2025/26" }, error: "" });
+  });
 });

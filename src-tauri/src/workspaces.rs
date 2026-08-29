@@ -13,10 +13,10 @@ use tauri::{AppHandle, Manager};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-const SCHEMA_VERSION: i64 = 20;
+const SCHEMA_VERSION: i64 = 25;
 const BACKUP_FORMAT_VERSION: u32 = 1;
 static CATALOG_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-const MIGRATIONS: [&str; 20] = [
+const MIGRATIONS: [&str; 25] = [
     include_str!("../migrations/001_initial_schema.sql"),
     include_str!("../migrations/002_invoice_workflow.sql"),
     include_str!("../migrations/003_expense_workflow.sql"),
@@ -37,6 +37,11 @@ const MIGRATIONS: [&str; 20] = [
     include_str!("../migrations/018_self_billing_foundation.sql"),
     include_str!("../migrations/019_expanded_audit_trail.sql"),
     include_str!("../migrations/020_integrity_hardening.sql"),
+    include_str!("../migrations/021_direct_income.sql"),
+    include_str!("../migrations/022_accounts_and_bank_classification.sql"),
+    include_str!("../migrations/023_bank_rules_transfers_splits.sql"),
+    include_str!("../migrations/024_direct_income_cis.sql"),
+    include_str!("../migrations/025_direct_income_editing.sql"),
 ];
 
 #[derive(Clone, Serialize, Deserialize)]

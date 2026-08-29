@@ -18,4 +18,10 @@ describe("filterHelpTopics", () => {
   it("returns no topics when no content matches", () => {
     expect(filterHelpTopics("unsupported-search-term")).toEqual([]);
   });
+
+  it("explains the local bank connection boundary", () => {
+    expect(filterHelpTopics("open banking").map((topic) => topic.id)).toEqual([
+      "bank-connections",
+    ]);
+  });
 });

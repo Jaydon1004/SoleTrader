@@ -32,6 +32,7 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   vehicles: Vehicle[];
   log?: MileageLog | null;
+  copy?: boolean;
   currentTaxYear: string;
 }
 const money = new Intl.NumberFormat("en-GB", {
@@ -44,6 +45,7 @@ export function MileageDialog({
   onOpenChange,
   vehicles,
   log,
+  copy = false,
   currentTaxYear,
 }: Props) {
   const saveMileage = useSaveMileage();
@@ -115,7 +117,7 @@ export function MileageDialog({
       return setError("Passenger count must be zero or more.");
     try {
       await saveMileage.mutateAsync({
-        id: log?.id,
+        id: copy ? undefined : log?.id,
         vehicle_id: Number(vehicleId),
         date,
         start_location: start.trim(),
@@ -144,10 +146,12 @@ export function MileageDialog({
     >
       <DialogContent className="max-w-2xl" {...dirtyCaptureProps}>
         <DialogHeader>
-          <DialogTitle>{log ? "Edit journey" : "Log mileage"}</DialogTitle>
+          <DialogTitle>{copy ? "Copy journey" : log ? "Edit journey" : "Log mileage"}</DialogTitle>
           <DialogDescription>
-            The final allowance is recalculated chronologically using{" "}
-            {currentTaxYear} HMRC rates and the shared car/van tier.
+            {copy
+              ? "Journey details copied. Choose the date for the new journey."
+              : "The final allowance is recalculated chronologically using "}
+            {!copy && currentTaxYear + " HMRC rates and the shared car/van tier."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -250,7 +254,11 @@ export function MileageDialog({
             onClick={save}
             disabled={saveMileage.isPending || eligible.length === 0}
           >
-            {saveMileage.isPending ? "Saving..." : "Save journey"}
+            {saveMileage.isPending
+              ? "Saving..."
+              : copy
+                ? "Save copied journey"
+                : "Save journey"}
           </Button>
         </DialogFooter>
       </DialogContent>

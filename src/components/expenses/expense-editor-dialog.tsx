@@ -310,6 +310,11 @@ export function ExpenseEditorDialog({ open, onOpenChange, expense }: Props) {
                 value={expenseDate}
                 onChange={(event) => setExpenseDate(event.target.value)}
               />
+              <p className="text-xs text-muted-foreground">
+                Use the date the expense was paid, including an earlier date
+                from before you installed SoleTrader. It will be assigned to
+                that UK tax year automatically.
+              </p>
             </div>
             <div className="space-y-2">
               <Label>Category</Label>

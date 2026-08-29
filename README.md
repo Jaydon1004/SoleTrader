@@ -2,7 +2,7 @@
 
 Private, local-first bookkeeping for UK sole traders. Free and open source.
 
-All data is stored in an encrypted SQLite database on your own computer — nothing is sent to the cloud.
+All data is stored in a local SQLite database on your own computer — nothing is sent to the cloud. The optional app PIN controls access to the app; it does not encrypt the database or backup files.
 
 ---
 
@@ -12,7 +12,7 @@ All data is stored in an encrypted SQLite database on your own computer — noth
 - **Expenses** — Log expenses by HMRC category, attach receipts, track recurring costs, batch categorise
 - **Receipt capture** — Scan receipts from your phone using a private QR code link on your local network; OCR auto-reads supplier and amount
 - **Bank import** — Import CSV, OFX, QIF, and QFX statements; auto-match transactions to existing invoices and expenses
-- **VAT management** — Quarterly VAT returns for standard and flat-rate schemes; MTD readiness tracking; period-by-period history
+- **VAT management** — Quarterly VAT return preparation for standard, flat-rate, and cash-accounting schemes; MTD readiness tracking; period-by-period history
 - **Tax calculator** — Transparent self-assessment estimate showing income tax, National Insurance, and payment-on-account breakdowns using your live records
 - **Tax confidence dashboard** — At-a-glance view of what to set aside, forecasted liability, and upcoming HMRC deadlines
 - **Vehicles & mileage** — HMRC mileage allowance or actual cost method per vehicle; journey log with purpose tracking
@@ -153,3 +153,7 @@ npm run tauri -- dev
 Current local builds are unsigned and may trigger Microsoft Defender SmartScreen with an Unknown Publisher warning. Obtain an Authenticode code-signing certificate and sign the EXE and MSI before distributing broadly.
 
 Automatic updates are disabled until a signed HTTPS update feed and Tauri updater public key are configured. Until then, upgrades must be delivered with a newer installer.
+
+### Compliance boundaries
+
+SoleTrader prepares VAT and Self Assessment figures locally but does not submit returns to HMRC. It does not connect directly to banks or provide open banking. Import statements using CSV, TSV, QIF, OFX, or QFX, review the results, and have unusual or final filings checked by an accountant. Protect the Windows device and keep verified backups because local database and backup files are not encrypted by the app.
