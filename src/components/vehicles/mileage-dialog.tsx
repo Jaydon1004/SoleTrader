@@ -146,12 +146,15 @@ export function MileageDialog({
     >
       <DialogContent className="max-w-2xl" {...dirtyCaptureProps}>
         <DialogHeader>
-          <DialogTitle>{copy ? "Copy journey" : log ? "Edit journey" : "Log mileage"}</DialogTitle>
+          <DialogTitle>
+            {copy ? "Copy journey" : log ? "Edit journey" : "Log mileage"}
+          </DialogTitle>
           <DialogDescription>
             {copy
               ? "Journey details copied. Choose the date for the new journey."
               : "The final allowance is recalculated chronologically using "}
-            {!copy && currentTaxYear + " HMRC rates and the shared car/van tier."}
+            {!copy &&
+              currentTaxYear + " HMRC rates and the shared car/van tier."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">

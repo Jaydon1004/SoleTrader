@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyVatAdjustments,
   calculateReturn,
+  supplierPurchasesForVat,
   vatPeriods,
   type VatAdjustment,
   type VatPeriod,
@@ -72,6 +73,62 @@ describe("VAT adjustments", () => {
       box8: 0,
       box9: 0,
     });
+  });
+});
+
+describe("supplier bill VAT timing", () => {
+  const bill = {
+    id: 1,
+    bill_date: "2026-07-01",
+    gross_amount: 120,
+    vat_amount: 20,
+    business_percent: 50,
+    vat_capital_asset: 0,
+  };
+
+  it("uses the supplier invoice date for standard VAT accounting", () => {
+    expect(supplierPurchasesForVat("standard", [bill], [])).toEqual([
+      {
+        date: "2026-07-01",
+        amount: 120,
+        vat_amount: 20,
+        business_percent: 50,
+        vat_ec_acquisition: 0,
+        vat_capital_asset: 0,
+      },
+    ]);
+  });
+
+  it("recognises supplier VAT proportionally as payments are made", () => {
+    expect(
+      supplierPurchasesForVat(
+        "cash_accounting",
+        [bill],
+        [
+          {
+            ...bill,
+            payment_date: "2026-08-01",
+            payment_amount: 30,
+          },
+          {
+            ...bill,
+            payment_date: "2026-09-01",
+            payment_amount: 90,
+          },
+        ],
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        date: "2026-08-01",
+        amount: 30,
+        vat_amount: 5,
+      }),
+      expect.objectContaining({
+        date: "2026-09-01",
+        amount: 90,
+        vat_amount: 15,
+      }),
+    ]);
   });
 });
 
@@ -152,5 +209,89 @@ describe("self-billed invoice VAT", () => {
       [{ income_date: "2026-07-20", amount: 120, vat_amount: 20 }],
     );
     expect(result).toMatchObject({ box1: 20, box5: 20, box6: 100 });
+  });
+
+  it("reports EC sales and acquisitions in the corresponding boxes", () => {
+    const result = calculateReturn(
+      period,
+      { vat_scheme: "standard", vat_flat_rate_percent: 0 } as UserProfile,
+      config,
+      [{ ...invoice, vat_ec_supply: 1 }],
+      [],
+      [],
+      [
+        {
+          date: "2026-08-01",
+          amount: 120,
+          vat_amount: 0,
+          business_percent: 100,
+          vat_ec_acquisition: 1,
+          vat_capital_asset: 0,
+        },
+      ],
+    );
+
+    expect(result).toMatchObject({
+      box1: 200,
+      box2: 24,
+      box4: 24,
+      box5: 200,
+      box8: 1000,
+      box9: 120,
+    });
+  });
+
+  it("reclaims only qualifying capital VAT on the flat-rate scheme", () => {
+    const result = calculateReturn(
+      period,
+      { vat_scheme: "flat_rate", vat_flat_rate_percent: 12.5 } as UserProfile,
+      config,
+      [invoice],
+      [],
+      [],
+      [
+        {
+          date: "2026-08-01",
+          amount: 2400,
+          vat_amount: 400,
+          business_percent: 50,
+          vat_ec_acquisition: 0,
+          vat_capital_asset: 1,
+        },
+        {
+          date: "2026-08-02",
+          amount: 120,
+          vat_amount: 20,
+          business_percent: 100,
+          vat_ec_acquisition: 0,
+          vat_capital_asset: 0,
+        },
+      ],
+    );
+
+    expect(result).toMatchObject({ box1: 150, box4: 200, box5: -50 });
+  });
+
+  it("reduces accrual VAT for credit notes and ignores zero-total shares", () => {
+    const result = calculateReturn(
+      period,
+      { vat_scheme: "standard", vat_flat_rate_percent: 0 } as UserProfile,
+      config,
+      [invoice],
+      [],
+      [
+        { ...invoice, credit_date: "2026-07-20", credit_amount: 120 },
+        {
+          ...invoice,
+          id: 43,
+          total: 0,
+          credit_date: "2026-07-21",
+          credit_amount: 10,
+        },
+      ],
+      [],
+    );
+
+    expect(result).toMatchObject({ box1: 180, box5: 180, box6: 900 });
   });
 });

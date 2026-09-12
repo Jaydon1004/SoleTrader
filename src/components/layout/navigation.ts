@@ -5,6 +5,7 @@ import {
   Calculator,
   Car,
   FileText,
+  FileCheck2,
   BadgePoundSterling,
   FolderOpen,
   History,
@@ -12,6 +13,7 @@ import {
   LayoutDashboard,
   PieChart,
   Receipt,
+  ReceiptText,
   Settings,
   Users,
   WalletCards,
@@ -43,8 +45,10 @@ export const navigationGroups = [
     items: [
       { to: "/vat", icon: Landmark, label: "VAT" },
       { to: "/tax", icon: Calculator, label: "Self Assessment" },
+      { to: "/tax-relief-guide", icon: ReceiptText, label: "Tax relief guide" },
       { to: "/reports", icon: PieChart, label: "Reports" },
       { to: "/accountant", icon: BriefcaseBusiness, label: "Accountant" },
+      { to: "/hmrc-handoff", icon: FileCheck2, label: "HMRC handoff" },
     ],
   },
 ];

@@ -1,10 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
   mapMigrationRows,
+  migrationTemplateCsv,
   suggestMigrationMapping,
 } from "@/lib/migration-import";
 
 describe("spreadsheet migration mapping", () => {
+  it("creates templates whose headers map without manual intervention", () => {
+    for (const kind of ["clients", "expenses", "income"] as const) {
+      const headers = migrationTemplateCsv(kind).split("\r\n")[0].split(",");
+      const mapping = suggestMigrationMapping(kind, headers);
+      expect(Object.values(mapping).filter(Boolean).length).toBe(
+        headers.length,
+      );
+    }
+  });
+
   it("suggests client columns and validates names", () => {
     const mapping = suggestMigrationMapping("clients", [
       "Client Name",
@@ -82,13 +93,22 @@ describe("spreadsheet migration mapping", () => {
       "VAT",
       "Payment method",
     ]);
-    const row = mapMigrationRows("income", [{
-      "Payment date": "05/04/2026",
-      Description: "Completed job",
-      Gross: "£120.00",
-      VAT: "20",
-      "Payment method": "Bank transfer",
-    }], mapping)[0];
-    expect(row).toMatchObject({ values: { date: "2026-04-05", amount: 120, vat: 20, taxYear: "2025/26" }, error: "" });
+    const row = mapMigrationRows(
+      "income",
+      [
+        {
+          "Payment date": "05/04/2026",
+          Description: "Completed job",
+          Gross: "£120.00",
+          VAT: "20",
+          "Payment method": "Bank transfer",
+        },
+      ],
+      mapping,
+    )[0];
+    expect(row).toMatchObject({
+      values: { date: "2026-04-05", amount: 120, vat: 20, taxYear: "2025/26" },
+      error: "",
+    });
   });
 });

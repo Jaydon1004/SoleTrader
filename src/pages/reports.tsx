@@ -68,7 +68,8 @@ type ReportKey =
   | "vat"
   | "tax"
   | "capital"
-  | "debtors";
+  | "debtors"
+  | "creditors";
 
 const reportNames: Record<ReportKey, string> = {
   "profit-loss": "Profit & Loss",
@@ -79,6 +80,7 @@ const reportNames: Record<ReportKey, string> = {
   tax: "Tax year summary",
   capital: "Capital allowances",
   debtors: "Aged debtors",
+  creditors: "Aged creditors",
 };
 
 function section(
@@ -602,6 +604,63 @@ export function ReportsPage() {
         ),
       ],
     };
+    const creditorReport: ReportDocument = {
+      title: "Outstanding supplier bills - aged creditors",
+      subtitle: `${subtitle} · position at ${new Date().toLocaleDateString("en-GB")}`,
+      sections: [
+        section(
+          "Ageing summary",
+          [
+            "Current",
+            "1-30 days",
+            "31-60 days",
+            "61-90 days",
+            "90+ days",
+            "Total",
+          ],
+          [
+            [
+              moneyCell(ledger.creditorTotals.current),
+              moneyCell(ledger.creditorTotals.days1To30),
+              moneyCell(ledger.creditorTotals.days31To60),
+              moneyCell(ledger.creditorTotals.days61To90),
+              moneyCell(ledger.creditorTotals.days90Plus),
+              moneyCell(ledger.creditorTotals.total),
+            ],
+          ],
+        ),
+        section(
+          "Outstanding supplier bills",
+          [
+            "Supplier",
+            "Reference",
+            "Bill date",
+            "Due",
+            "Age",
+            "Days overdue",
+            "Balance",
+          ],
+          ledger.creditors.map((row) => [
+            row.supplier,
+            row.reference || `Bill ${row.billId}`,
+            row.billDate,
+            row.dueDate,
+            row.age,
+            row.daysOverdue,
+            moneyCell(row.balance),
+          ]),
+          [
+            "Total outstanding",
+            "",
+            "",
+            "",
+            "",
+            "",
+            moneyCell(ledger.creditorTotals.total),
+          ],
+        ),
+      ],
+    };
     return {
       selected: {
         "profit-loss": profitLoss(period),
@@ -612,6 +671,7 @@ export function ReportsPage() {
         tax: taxReport,
         capital: capitalReport,
         debtors: debtorReport,
+        creditors: creditorReport,
       } as Record<ReportKey, ReportDocument>,
       metrics: {
         income: dashboard.income,
@@ -757,7 +817,13 @@ export function ReportsPage() {
             Operational
           </p>
           {(
-            ["profit-loss", "clients", "expenses", "debtors"] as ReportKey[]
+            [
+              "profit-loss",
+              "clients",
+              "expenses",
+              "debtors",
+              "creditors",
+            ] as ReportKey[]
           ).map((key) => (
             <button
               key={key}

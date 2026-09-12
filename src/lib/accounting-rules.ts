@@ -38,6 +38,25 @@ export function allowableExpenseAmount(
   return (gross - recoverableVat) * (businessPercent / 100);
 }
 
+export function paidSupplierBillExpense(
+  payment: number,
+  grossBill: number,
+  allowableBill: number,
+) {
+  if (payment <= 0 || grossBill <= 0 || allowableBill <= 0) return 0;
+  return Math.min(allowableBill, (payment / grossBill) * allowableBill);
+}
+
+export function accrualAdjustmentExpense(
+  type: "accrual" | "prepayment",
+  amount: number,
+  reversing = false,
+) {
+  const signed =
+    type === "accrual" ? Math.max(0, amount) : -Math.max(0, amount);
+  return reversing ? -signed : signed;
+}
+
 export function groupTaxableSales(rows: NamedSale[], profile: VatProfile) {
   const grouped = new Map<string, number>();
   for (const row of rows) {

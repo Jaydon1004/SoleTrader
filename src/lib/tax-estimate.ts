@@ -95,7 +95,10 @@ function taxAcrossBands(
   };
 }
 
-function homeOfficeDeduction(input: TaxCalculatorInput, config: TaxYearConfig) {
+export function homeOfficeDeduction(
+  input: TaxCalculatorInput,
+  config: TaxYearConfig,
+) {
   if (input.home_office_method === "actual")
     return input.home_office_actual_cost;
   if (input.home_office_method !== "flat_rate") return 0;

@@ -29,6 +29,7 @@ pub struct BankImportRowInput {
 pub struct ImportBankInput {
     workspace_id: String,
     source_file: String,
+    bank_account_id: i64,
     rows: Vec<BankImportRowInput>,
 }
 
@@ -114,6 +115,14 @@ async fn import_at(path: &Path, input: ImportBankInput) -> Result<ImportBankResu
         .await
         .map_err(|error| error.to_string())?;
     let mut transaction = pool.begin().await.map_err(|error| error.to_string())?;
+    let account_use = sqlx::query_scalar::<_, String>(
+        "SELECT account_use FROM bank_accounts WHERE id = ? AND archived = 0",
+    )
+    .bind(input.bank_account_id)
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(|error| error.to_string())?
+    .ok_or("Select an active bank account for this statement.")?;
     let settings = sqlx::query_as::<_, (i64, f64)>("SELECT match_tolerance_days, amount_tolerance FROM bank_reconciliation_settings WHERE id = 1")
         .fetch_optional(&mut *transaction).await.map_err(|error| error.to_string())?.ok_or("Bank reconciliation settings are unavailable.")?;
     let mut seen = HashSet::new();
@@ -130,8 +139,9 @@ async fn import_at(path: &Path, input: ImportBankInput) -> Result<ImportBankResu
         }
         tax_year_for_date(&row.transaction_date)?;
         let exists = sqlx::query_scalar::<_, bool>(
-            "SELECT EXISTS(SELECT 1 FROM bank_transactions WHERE hash = ?)",
+            "SELECT EXISTS(SELECT 1 FROM bank_transactions WHERE bank_account_id = ? AND hash = ?)",
         )
+        .bind(input.bank_account_id)
         .bind(&row.fingerprint)
         .fetch_one(&mut *transaction)
         .await
@@ -179,7 +189,9 @@ async fn import_at(path: &Path, input: ImportBankInput) -> Result<ImportBankResu
     let mut matched = 0;
     for row in &importable {
         let incoming = row.amount_in > 0.0;
-        let matched_candidate = if incoming {
+        let matched_candidate = if account_use != "business" {
+            None
+        } else if incoming {
             best_match(
                 &row.transaction_date,
                 row.amount_in,
@@ -210,12 +222,18 @@ async fn import_at(path: &Path, input: ImportBankInput) -> Result<ImportBankResu
             } else {
                 (None, None, "")
             };
-        let classification = if candidate_id.is_none() { "unclassified" } else if incoming { "invoice_payment" } else { "expense" };
-        sqlx::query("INSERT INTO bank_transactions (transaction_date, description, amount_in, amount_out, balance, matched_invoice_id, matched_expense_id, matched_payment_id, status, classification, source_file, hash, import_batch_id, tax_year, match_confidence, raw_data, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))")
+        let classification = if candidate_id.is_none() {
+            "unclassified"
+        } else if incoming {
+            "invoice_payment"
+        } else {
+            "expense"
+        };
+        sqlx::query("INSERT INTO bank_transactions (transaction_date, description, amount_in, amount_out, balance, matched_invoice_id, matched_expense_id, matched_payment_id, status, classification, source_file, hash, import_batch_id, tax_year, match_confidence, raw_data, bank_account_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))")
             .bind(&row.transaction_date).bind(row.description.trim()).bind(row.amount_in).bind(row.amount_out).bind(row.balance)
             .bind(if incoming { record_id } else { None }).bind(if incoming { None } else { record_id }).bind(if incoming { candidate_id } else { None })
             .bind(if candidate_id.is_some() { "matched" } else { "unmatched" }).bind(classification).bind(input.source_file.trim()).bind(&row.fingerprint).bind(batch_id)
-            .bind(tax_year_for_date(&row.transaction_date)?).bind(confidence).bind(&row.raw_data).execute(&mut *transaction).await.map_err(|error| error.to_string())?;
+            .bind(tax_year_for_date(&row.transaction_date)?).bind(confidence).bind(&row.raw_data).bind(input.bank_account_id).execute(&mut *transaction).await.map_err(|error| error.to_string())?;
     }
     transaction
         .commit()
@@ -276,6 +294,7 @@ mod tests {
         let input = ImportBankInput {
             workspace_id: "test".into(),
             source_file: "statement.csv".into(),
+            bank_account_id: 1,
             rows: vec![row("First", "one"), row("Reject", "two")],
         };
         assert!(import_at(&database, input).await.is_err());

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
-import { readTextFile } from "@tauri-apps/plugin-fs";
-import { Check, FileSpreadsheet, Upload } from "lucide-react";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import { readTextFile, writeTextFile } from "@tauri-apps/plugin-fs";
+import { Check, Download, FileSpreadsheet, Upload } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ import { parseCsv } from "@/lib/bank-import";
 import {
   mapMigrationRows,
   migrationFields,
+  migrationTemplateCsv,
   suggestMigrationMapping,
   type MigrationKind,
   type MigrationMapping,
@@ -161,13 +162,30 @@ export function MigrationImportPanel() {
       );
     }
   };
+  const saveTemplate = async () => {
+    setError("");
+    try {
+      const destination = await save({
+        defaultPath: `soletrader-${kind}-template.csv`,
+        filters: [{ name: "CSV spreadsheet", extensions: ["csv"] }],
+      });
+      if (!destination) return;
+      await writeTextFile(destination, migrationTemplateCsv(kind));
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "The template could not be saved.",
+      );
+    }
+  };
   return (
     <Card>
       <CardHeader>
         <CardTitle>Spreadsheet migration</CardTitle>
         <CardDescription>
-          Import clients, historical expenses, or direct income from any headed CSV. Review
-          mapping and validation before records are written.
+          Import clients, historical expenses, or direct income from any headed
+          CSV. Review mapping and validation before records are written.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -196,10 +214,16 @@ export function MigrationImportPanel() {
               CSV or text export with one header row.
             </p>
           </div>
-          <Button variant="outline" onClick={chooseFile}>
-            <FileSpreadsheet className="mr-2 h-4 w-4" />
-            Choose CSV
-          </Button>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" onClick={() => void saveTemplate()}>
+              <Download className="mr-2 h-4 w-4" />
+              Save template
+            </Button>
+            <Button variant="outline" onClick={chooseFile}>
+              <FileSpreadsheet className="mr-2 h-4 w-4" />
+              Choose CSV
+            </Button>
+          </div>
         </div>
         {headers.length > 0 && (
           <>
@@ -220,7 +244,7 @@ export function MigrationImportPanel() {
                 ))}
               </div>
             </div>
-              {kind === "expenses" && (
+            {kind === "expenses" && (
               <div className="max-w-sm space-y-1.5">
                 <Label>Fallback category *</Label>
                 <Select

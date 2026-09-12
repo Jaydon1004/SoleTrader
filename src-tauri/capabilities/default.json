@@ -18,6 +18,8 @@
     "dialog:allow-open",
     "dialog:allow-save",
     "fs:allow-read-file",
+    "fs:allow-stat",
+    "fs:allow-mkdir",
     "fs:allow-write-file",
     "fs:allow-write-text-file"
   ]

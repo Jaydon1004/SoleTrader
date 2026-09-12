@@ -6,6 +6,14 @@ export interface BusinessWorkspace {
   archived: boolean;
   createdAt: number;
   updatedAt: number;
+  lastBackupAt?: number | null;
+  lastBackupFileCount?: number | null;
+}
+
+export interface BackupResult {
+  path: string;
+  completedAt: number;
+  fileCount: number;
 }
 
 export interface FileAuditResult {
@@ -35,7 +43,7 @@ export async function auditBusinessFiles(id: string) {
 }
 
 export async function backupBusinessWorkspace(id: string, destination: string) {
-  return invoke<string>("backup_business_workspace", { id, destination });
+  return invoke<BackupResult>("backup_business_workspace", { id, destination });
 }
 
 export async function restoreBusinessWorkspace(source: string) {

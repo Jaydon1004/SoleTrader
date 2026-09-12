@@ -327,10 +327,29 @@ export function VehiclesPage() {
         <TabsContent value="mileage" className="space-y-3">
           <div className="flex justify-end">
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={() => setMonthlyMileageOpen(true)} disabled={!activeVehicles.some((vehicle) => vehicle.cost_method === "mileage")}>
+              <Button
+                variant="outline"
+                onClick={() => setMonthlyMileageOpen(true)}
+                disabled={
+                  !activeVehicles.some(
+                    (vehicle) => vehicle.cost_method === "mileage",
+                  )
+                }
+              >
                 <Plus className="mr-2 h-4 w-4" /> Add monthly total
               </Button>
-              <Button onClick={() => { setEditingMileage(null); setCopyingMileage(false); setMileageOpen(true); }} disabled={!activeVehicles.some((vehicle) => vehicle.cost_method === "mileage")}>
+              <Button
+                onClick={() => {
+                  setEditingMileage(null);
+                  setCopyingMileage(false);
+                  setMileageOpen(true);
+                }}
+                disabled={
+                  !activeVehicles.some(
+                    (vehicle) => vehicle.cost_method === "mileage",
+                  )
+                }
+              >
                 <Plus className="mr-2 h-4 w-4" /> Log journey
               </Button>
             </div>
@@ -527,7 +546,10 @@ export function VehiclesPage() {
         open={mileageOpen}
         onOpenChange={(open) => {
           setMileageOpen(open);
-          if (!open) { setEditingMileage(null); setCopyingMileage(false); }
+          if (!open) {
+            setEditingMileage(null);
+            setCopyingMileage(false);
+          }
         }}
         vehicles={activeVehicles}
         log={editingMileage}

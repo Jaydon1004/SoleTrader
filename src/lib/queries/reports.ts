@@ -25,10 +25,23 @@ export interface AgedDebtorRow {
   age: string;
 }
 
+export interface AgedCreditorRow {
+  billId: number;
+  supplier: string;
+  reference: string;
+  billDate: string;
+  dueDate: string;
+  balance: number;
+  daysOverdue: number;
+  age: string;
+}
+
 export interface ReportLedgerData {
   incomeByClient: ReportNamedAmount[];
   debtors: AgedDebtorRow[];
   debtorTotals: AgedDebtorTotals;
+  creditors: AgedCreditorRow[];
+  creditorTotals: AgedDebtorTotals;
 }
 
 function calendarDays(left: string, right: string) {
@@ -91,7 +104,10 @@ export function useReportLedger(
                 config.year_end,
               ],
             );
-      const incomeByClient = groupTaxableSales([...incomeRows, ...directRows], profile);
+      const incomeByClient = groupTaxableSales(
+        [...incomeRows, ...directRows],
+        profile,
+      );
       const today = new Date().toISOString().slice(0, 10);
       const debtorRows = await query<{
         invoice_reference: string;
@@ -121,11 +137,46 @@ export function useReportLedger(
             age: ageLabel(daysOverdue),
           };
         });
+      const creditorRows = await query<{
+        bill_id: number;
+        supplier: string;
+        reference: string;
+        bill_date: string;
+        due_date: string;
+        balance: number;
+      }>(
+        `SELECT b.id AS bill_id, b.supplier, b.reference, b.bill_date, b.due_date,
+          ROUND(MAX(0, b.gross_amount - COALESCE((SELECT SUM(p.amount) FROM supplier_bill_payments p WHERE p.bill_id = b.id), 0)), 2) AS balance
+         FROM supplier_bills b WHERE b.deleted_at IS NULL ORDER BY b.due_date, b.id`,
+      );
+      const creditors = creditorRows
+        .filter((row) => row.balance > 0)
+        .map((row) => {
+          const daysOverdue = calendarDays(today, row.due_date);
+          return {
+            billId: row.bill_id,
+            supplier: row.supplier,
+            reference: row.reference,
+            billDate: row.bill_date,
+            dueDate: row.due_date,
+            balance: row.balance,
+            daysOverdue: Math.max(0, daysOverdue),
+            age: ageLabel(daysOverdue),
+          };
+        });
       return {
         incomeByClient,
         debtors,
         debtorTotals: ageDebtors(
           debtors.map((row) => ({
+            dueDate: row.dueDate,
+            balance: row.balance,
+          })),
+          today,
+        ),
+        creditors,
+        creditorTotals: ageDebtors(
+          creditors.map((row) => ({
             dueDate: row.dueDate,
             balance: row.balance,
           })),

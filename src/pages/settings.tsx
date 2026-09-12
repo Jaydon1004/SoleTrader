@@ -240,7 +240,7 @@ function PersonalTab({ onDirtyChange }: DirtyTabProps) {
               className="flex gap-4"
             >
               {[
-                { value: "cash", label: "Cash Basis" },
+                { value: "cash", label: "Receipts Basis (Cash Basis)" },
                 { value: "accrual", label: "Accrual Basis" },
               ].map((o) => (
                 <label
@@ -252,6 +252,10 @@ function PersonalTab({ onDirtyChange }: DirtyTabProps) {
                 </label>
               ))}
             </RadioGroup>
+            <p className="text-sm text-muted-foreground">
+              Receipts basis means income counts when payment reaches you,
+              including bank transfers. It does not mean physical cash.
+            </p>
           </div>
 
           <div className="space-y-3">

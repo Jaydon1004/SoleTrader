@@ -11,7 +11,7 @@ All data is stored in a local SQLite database on your own computer — nothing i
 - **Invoices & sales** — Create, issue, and manage invoices with PDF export; record partial payments; handle quotes and recurring billing; CIS and self-billing support
 - **Expenses** — Log expenses by HMRC category, attach receipts, track recurring costs, batch categorise
 - **Receipt capture** — Scan receipts from your phone using a private QR code link on your local network; OCR auto-reads supplier and amount
-- **Bank import** — Import CSV, OFX, QIF, and QFX statements; auto-match transactions to existing invoices and expenses
+- **Bank import and review queue** — Import CSV, OFX, QIF, and QFX statements; prioritise overdue and high-value unmatched transactions; auto-match existing invoices and expenses
 - **VAT management** — Quarterly VAT return preparation for standard, flat-rate, and cash-accounting schemes; MTD readiness tracking; period-by-period history
 - **Tax calculator** — Transparent self-assessment estimate showing income tax, National Insurance, and payment-on-account breakdowns using your live records
 - **Tax confidence dashboard** — At-a-glance view of what to set aside, forecasted liability, and upcoming HMRC deadlines
@@ -19,11 +19,13 @@ All data is stored in a local SQLite database on your own computer — nothing i
 - **Capital allowances** — AIA, writing-down allowance, and balancing charge calculations
 - **Clients** — Client directory with outstanding balance and invoice history
 - **Reports & export** — Profit & loss, VAT schedules, HMRC SA103 schedule, mileage summary; CSV and PDF export
+- **Migration templates** — Download ready-to-fill CSV templates for clients, expenses and direct income, then preview validation before importing
 - **Accountant package** — One-click export of all records, ledgers, and receipts into an organised folder for your accountant
 - **Reminders** — Custom reminders and automatic HMRC deadline alerts (Self Assessment, VAT, payments on account)
 - **PIN lock** — Optional app lock with configurable idle timeout
-- **Multiple businesses** — Separate, isolated workspaces for different business identities
+- **Multiple businesses** — Separate, isolated workspaces with visible verified-backup health for each business identity
 - **Automatic updates** — In-app update check with one-click install
+- **Private diagnostics** — Export bounded crash and platform diagnostics without financial records, business names or documents
 
 ---
 

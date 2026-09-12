@@ -115,9 +115,11 @@ export function useAdvancedTaxData(taxYear: string) {
         assets,
         cisTransactions,
         schedule,
-        cisReceived: cisTransactions
-          .filter((entry) => entry.direction === "received")
-          .reduce((sum, entry) => sum + entry.deduction_amount, 0) + directCis.reduce((sum, entry) => sum + entry.deduction_amount, 0),
+        cisReceived:
+          cisTransactions
+            .filter((entry) => entry.direction === "received")
+            .reduce((sum, entry) => sum + entry.deduction_amount, 0) +
+          directCis.reduce((sum, entry) => sum + entry.deduction_amount, 0),
         cisMade: cisTransactions
           .filter((entry) => entry.direction === "made")
           .reduce((sum, entry) => sum + entry.deduction_amount, 0),

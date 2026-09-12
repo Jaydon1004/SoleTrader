@@ -32,6 +32,20 @@ interface PurchaseVatRow {
   vat_capital_asset: number;
 }
 
+interface SupplierBillVatRow {
+  id: number;
+  bill_date: string;
+  gross_amount: number;
+  vat_amount: number;
+  business_percent: number;
+  vat_capital_asset: number;
+}
+
+interface SupplierPaymentVatRow extends SupplierBillVatRow {
+  payment_date: string;
+  payment_amount: number;
+}
+
 interface DirectIncomeVatRow {
   income_date: string;
   amount: number;
@@ -183,6 +197,37 @@ function invoiceShare(row: InvoiceVatRow, amount: number) {
     vat: (amount * row.vat_amount) / row.total,
     gross: amount,
   };
+}
+
+export function supplierPurchasesForVat(
+  scheme: UserProfile["vat_scheme"],
+  bills: SupplierBillVatRow[],
+  payments: SupplierPaymentVatRow[],
+): PurchaseVatRow[] {
+  if (scheme !== "cash_accounting") {
+    return bills.map((bill) => ({
+      date: bill.bill_date,
+      amount: bill.gross_amount,
+      vat_amount: bill.vat_amount,
+      business_percent: bill.business_percent,
+      vat_ec_acquisition: 0,
+      vat_capital_asset: bill.vat_capital_asset,
+    }));
+  }
+  return payments.map((payment) => {
+    const share =
+      payment.gross_amount > 0
+        ? Math.min(1, payment.payment_amount / payment.gross_amount)
+        : 0;
+    return {
+      date: payment.payment_date,
+      amount: payment.payment_amount,
+      vat_amount: payment.vat_amount * share,
+      business_percent: payment.business_percent,
+      vat_ec_acquisition: 0,
+      vat_capital_asset: payment.vat_capital_asset,
+    };
+  });
 }
 
 export function calculateReturn(
@@ -343,6 +388,8 @@ export function useVatOverview(taxYear: string) {
         directIncome,
         expenses,
         vehicleCosts,
+        supplierBills,
+        supplierPayments,
         turnoverRows,
         snapshots,
         adjustments,
@@ -370,6 +417,15 @@ export function useVatOverview(taxYear: string) {
         ),
         query<PurchaseVatRow>(
           `SELECT date, amount, vat_amount, business_percent, 0 AS vat_ec_acquisition, vat_capital_asset FROM vehicle_costs WHERE deleted_at IS NULL`,
+        ),
+        query<SupplierBillVatRow>(
+          `SELECT id, bill_date, gross_amount, vat_amount, business_percent, vat_capital_asset FROM supplier_bills WHERE deleted_at IS NULL`,
+        ),
+        query<SupplierPaymentVatRow>(
+          `SELECT b.id, b.bill_date, b.gross_amount, b.vat_amount, b.business_percent,
+            b.vat_capital_asset, p.payment_date, p.amount AS payment_amount
+           FROM supplier_bill_payments p INNER JOIN supplier_bills b ON b.id = p.bill_id
+           WHERE b.deleted_at IS NULL`,
         ),
         query<{ turnover: number }>(
           `SELECT COALESCE((SELECT SUM(subtotal) FROM invoices WHERE deleted_at IS NULL AND is_quote = 0 AND (status NOT IN ('draft', 'cancelled') OR bad_debt_written_off = 1) AND issue_date BETWEEN date('now', '-12 months') AND date('now')), 0) + COALESCE((SELECT SUM(gross_amount - vat_amount) FROM direct_income WHERE deleted_at IS NULL AND income_type = 'sale' AND income_date BETWEEN date('now', '-12 months') AND date('now')), 0) - COALESCE((SELECT SUM(c.amount * i.subtotal / NULLIF(i.total, 0)) FROM credit_notes c INNER JOIN invoices i ON i.id = c.invoice_id WHERE c.issue_date BETWEEN date('now', '-12 months') AND date('now') AND i.deleted_at IS NULL), 0) AS turnover`,
@@ -406,7 +462,15 @@ export function useVatOverview(taxYear: string) {
             invoices,
             payments,
             credits,
-            [...expenses, ...vehicleCosts],
+            [
+              ...expenses,
+              ...vehicleCosts,
+              ...supplierPurchasesForVat(
+                profile.vat_scheme,
+                supplierBills,
+                supplierPayments,
+              ),
+            ],
             adjustments,
             directIncome,
           );

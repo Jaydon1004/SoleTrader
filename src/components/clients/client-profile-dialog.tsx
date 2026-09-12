@@ -288,7 +288,8 @@ export function ClientProfileDialog({
                     <p className="mt-1 text-xs text-muted-foreground">
                       {dateFormatter.format(
                         new Date(`${income.income_date}T00:00:00`),
-                      )} · {income.payment_method || "Payment received"}
+                      )}{" "}
+                      · {income.payment_method || "Payment received"}
                     </p>
                   </div>
                   <p className="text-sm font-semibold text-green-600 dark:text-green-400">

@@ -20,6 +20,18 @@ type Props = {
 export function TaxSetupStep({ data, onChange }: Props) {
   const set = (field: keyof UserProfile, value: unknown) =>
     onChange({ ...data, [field]: value });
+  const setVatStatus = (value: UserProfile["vat_status"]) =>
+    onChange({
+      ...data,
+      vat_status: value,
+      ...(value === "unregistered"
+        ? {
+            vat_number: "",
+            vat_scheme: "standard" as const,
+            vat_flat_rate_percent: null,
+          }
+        : {}),
+    });
 
   return (
     <div className="space-y-6">
@@ -42,14 +54,15 @@ export function TaxSetupStep({ data, onChange }: Props) {
             <RadioGroupItem value="cash" className="mt-0.5" />
             <div>
               <p className="font-medium">
-                Cash Basis{" "}
+                Receipts Basis (Cash Basis){" "}
                 <span className="text-xs text-muted-foreground ml-1">
                   (recommended for most sole traders)
                 </span>
               </p>
               <p className="text-sm text-muted-foreground">
-                Record income when you receive payment, expenses when you pay
-                them.
+                Record income when payment reaches you, including bank
+                transfers, and expenses when you pay them. This does not mean
+                physical cash.
               </p>
             </div>
           </label>
@@ -71,7 +84,9 @@ export function TaxSetupStep({ data, onChange }: Props) {
         <Label className="text-base font-semibold">VAT Status</Label>
         <RadioGroup
           value={data.vat_status ?? "unregistered"}
-          onValueChange={(v) => set("vat_status", v)}
+          onValueChange={(value) =>
+            setVatStatus(value as UserProfile["vat_status"])
+          }
           className="grid grid-cols-1 gap-3"
         >
           {[
@@ -105,15 +120,61 @@ export function TaxSetupStep({ data, onChange }: Props) {
         </RadioGroup>
 
         {data.vat_status !== "unregistered" && (
-          <div className="space-y-2 pl-1">
-            <Label htmlFor="vat_number">VAT Registration Number</Label>
-            <Input
-              id="vat_number"
-              value={data.vat_number ?? ""}
-              onChange={(e) => set("vat_number", e.target.value)}
-              placeholder="GB123456789"
-              maxLength={14}
-            />
+          <div className="grid gap-4 border-l-2 border-primary/30 pl-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="vat_number">VAT Registration Number</Label>
+              <Input
+                id="vat_number"
+                value={data.vat_number ?? ""}
+                onChange={(e) => set("vat_number", e.target.value)}
+                placeholder="GB123456789"
+                maxLength={14}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>VAT Scheme</Label>
+              <Select
+                value={data.vat_scheme ?? "standard"}
+                onValueChange={(value) => set("vat_scheme", value)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="standard">Standard</SelectItem>
+                  <SelectItem value="cash_accounting">
+                    Cash Accounting
+                  </SelectItem>
+                  <SelectItem value="flat_rate">Flat Rate Scheme</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {data.vat_scheme === "flat_rate" && (
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="vat_flat_rate_percent">
+                  Industry flat rate %
+                </Label>
+                <Input
+                  id="vat_flat_rate_percent"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={data.vat_flat_rate_percent ?? ""}
+                  onChange={(event) =>
+                    set(
+                      "vat_flat_rate_percent",
+                      event.target.value === ""
+                        ? null
+                        : Number(event.target.value),
+                    )
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  Use the HMRC percentage for your trade sector.
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>

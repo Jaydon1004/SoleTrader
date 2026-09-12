@@ -85,6 +85,13 @@ export const router = createBrowserRouter([
         }),
       },
       {
+        path: "tax-relief-guide",
+        lazy: async () => ({
+          Component: (await import("@/pages/tax-relief-guide"))
+            .TaxReliefGuidePage,
+        }),
+      },
+      {
         path: "reports",
         lazy: async () => ({
           Component: (await import("@/pages/reports")).ReportsPage,
@@ -94,6 +101,12 @@ export const router = createBrowserRouter([
         path: "accountant",
         lazy: async () => ({
           Component: (await import("@/pages/accountant")).AccountantPage,
+        }),
+      },
+      {
+        path: "hmrc-handoff",
+        lazy: async () => ({
+          Component: (await import("@/pages/hmrc-handoff")).HmrcHandoffPage,
         }),
       },
       {

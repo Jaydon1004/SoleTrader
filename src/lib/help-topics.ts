@@ -45,13 +45,21 @@ export const helpTopics: HelpTopic[] = [
   {
     id: "bank-connections",
     title: "Bank connections and account data",
-    summary: "Use local statement imports and keep account classifications accurate.",
+    summary:
+      "Use local statement imports and keep account classifications accurate.",
     details: [
       "SoleTrader does not connect to banks or use open banking. Import a statement exported by your bank or payment provider.",
       "Create separate local accounts for current accounts, cash, PayPal, Stripe, cards and savings, then filter reconciliation by account.",
       "Classify owner movements, transfers, loans and refunds so they are not reported as sales or allowable expenses.",
     ],
-    keywords: ["bank", "account", "open banking", "transfer", "owner", "classification"],
+    keywords: [
+      "bank",
+      "account",
+      "open banking",
+      "transfer",
+      "owner",
+      "classification",
+    ],
   },
   {
     id: "backup-restore",

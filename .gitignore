@@ -28,3 +28,8 @@ src-tauri/target/
 
 # Test coverage
 coverage/
+playwright-report/
+test-results/
+
+# Local duplicate retained outside the tracked application
+/SoleTrader/

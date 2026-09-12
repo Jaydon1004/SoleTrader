@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import {
   allowableExpenseAmount,
+  accrualAdjustmentExpense,
   badDebtExpenseAmount,
   groupTaxableSales,
+  paidSupplierBillExpense,
   recognisedCashCreditAmounts,
   taxableSaleAmount,
 } from "@/lib/accounting-rules";
@@ -76,6 +78,41 @@ describe("VAT-aware income tax amounts", () => {
       { name: "Client B", amount: 200 },
       { name: "Client A", amount: 50 },
     ]);
+  });
+});
+
+describe("accrual expense recognition", () => {
+  it("recognises supplier bill payments proportionally on the cash basis", () => {
+    expect(paidSupplierBillExpense(60, 120, 100)).toBe(50);
+    expect(paidSupplierBillExpense(120, 120, 100)).toBe(100);
+    expect(paidSupplierBillExpense(130, 120, 100)).toBe(100);
+    expect(paidSupplierBillExpense(10, 0, 100)).toBe(0);
+  });
+
+  it("signs accruals and prepayments and reverses both", () => {
+    expect(accrualAdjustmentExpense("accrual", 300)).toBe(300);
+    expect(accrualAdjustmentExpense("prepayment", 300)).toBe(-300);
+    expect(accrualAdjustmentExpense("accrual", 300, true)).toBe(-300);
+    expect(accrualAdjustmentExpense("prepayment", 300, true)).toBe(300);
+  });
+
+  it("never recognises more than the allowable bill amount", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 100_000_000 }),
+        fc.integer({ min: 1, max: 100_000_000 }),
+        fc.integer({ min: 0, max: 100_000_000 }),
+        (paymentPence, grossPence, allowablePence) => {
+          const payment = paymentPence / 100;
+          const gross = grossPence / 100;
+          const allowable = allowablePence / 100;
+          const recognised = paidSupplierBillExpense(payment, gross, allowable);
+          expect(recognised).toBeGreaterThanOrEqual(0);
+          expect(recognised).toBeLessThanOrEqual(allowable);
+        },
+      ),
+      { numRuns: 500 },
+    );
   });
 });
 

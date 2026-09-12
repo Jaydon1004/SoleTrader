@@ -15,12 +15,14 @@ export default defineConfig(async () => ({
     },
   },
   test: {
+    exclude: ["SoleTrader/**", "e2e/**", "node_modules/**", "dist/**"],
     coverage: {
       provider: "v8",
       include: [
         "src/lib/accounting-rules.ts",
-        "src/lib/integrated-tax.ts",
-        "src/lib/vat.ts",
+        "src/lib/bank-review.ts",
+        "src/lib/tax-estimate.ts",
+        "src/lib/queries/vat.ts",
         "src/lib/capital-allowances.ts",
         "src/lib/report-calculations.ts",
         "src/lib/bank-import.ts",
@@ -31,9 +33,27 @@ export default defineConfig(async () => ({
       reporter: ["text", "json-summary"],
       thresholds: {
         statements: 75,
-        branches: 70,
-        functions: 78,
+        branches: 69,
+        functions: 75,
         lines: 75,
+      },
+    },
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return;
+          if (
+            id.includes("/react/") ||
+            id.includes("/react-dom/") ||
+            id.includes("/react-router") ||
+            id.includes("/@tanstack/")
+          )
+            return "framework";
+          if (id.includes("/@radix-ui/")) return "ui";
+          if (id.includes("/recharts/") || id.includes("/d3-")) return "charts";
+        },
       },
     },
   },

@@ -34,6 +34,7 @@ import {
   useCreateDirectIncome,
   useDeleteDirectIncome,
   useDirectIncome,
+  useDirectIncomeRecord,
   useDueRecurringDirectIncome,
   useProcessRecurringDirectIncome,
   useUpdateDirectIncome,
@@ -48,7 +49,7 @@ const money = new Intl.NumberFormat("en-GB", {
 });
 const labels: Record<DirectIncomeType, string> = {
   sale: "Direct sale",
-  cis_subcontractor: "CIS subcontractor payment",
+  cis_subcontractor: "CIS subcontractor receipt",
   other_business_income: "Other business income",
   grant: "Grant",
   refund: "Refund",
@@ -174,8 +175,9 @@ function IncomeEditor({
             {income ? "Edit direct income" : "Record direct income"}
           </DialogTitle>
           <DialogDescription>
-            Record income without an invoice. Historical dates are allowed. CIS
-            deductions are tax already paid, not expenses.
+            Record money paid directly to you without raising an invoice. For
+            CIS work, enter the net deposit shown in your bank or the gross
+            amount shown on the contractor statement.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -230,7 +232,13 @@ function IncomeEditor({
             </Select>
           </div>
           <div>
-            <Label>{isCis ? "Cash received" : "Amount received"}</Label>
+            <Label>
+              {isCis
+                ? incomeMode === "after_cis"
+                  ? "Net paid into bank"
+                  : "Gross income before CIS"
+                : "Amount received"}
+            </Label>
             <Input
               type="number"
               min="0"
@@ -253,8 +261,12 @@ function IncomeEditor({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="after_cis">After CIS income</SelectItem>
-                    <SelectItem value="gross">Gross income</SelectItem>
+                    <SelectItem value="after_cis">
+                      Enter net bank deposit
+                    </SelectItem>
+                    <SelectItem value="gross">
+                      Enter gross before CIS
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -303,13 +315,17 @@ function IncomeEditor({
                 />
               </div>
               <div className="grid grid-cols-2 gap-2 border-t border-amber-300 pt-2 text-sm dark:border-amber-700 sm:col-span-2">
+                <span>Net paid into bank</span>
+                <strong>{money.format(cashPreview)}</strong>
                 <span>Gross income</span>
                 <strong>{money.format(grossPreview)}</strong>
-                <span>CIS deducted</span>
+                <span>CIS withheld</span>
                 <strong>{money.format(cisPreview)}</strong>
               </div>
               <p className="text-xs text-amber-900 dark:text-amber-200 sm:col-span-2">
-                CIS deducted is tax already paid on your behalf, not an expense.
+                The contractor withholds CIS and sends it to HMRC for you. It is
+                tax already paid on your behalf, not cash income and not a
+                business expense. No sales invoice is required for this entry.
               </p>
             </div>
           )}
@@ -347,6 +363,7 @@ function IncomeEditor({
           <div className="flex items-center gap-2 sm:col-span-2">
             <input
               id="income-recurring"
+              aria-label="Repeat this income"
               type="checkbox"
               checked={recurring}
               onChange={(event) => setRecurring(event.target.checked)}
@@ -420,6 +437,12 @@ export function IncomePage() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<DirectIncome | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
+  const requestedIncomeId = Number(searchParams.get("open"));
+  const requestedIncome = useDirectIncomeRecord(
+    Number.isInteger(requestedIncomeId) && requestedIncomeId > 0
+      ? requestedIncomeId
+      : null,
+  );
   const income = useDirectIncome({ taxYear, search });
   const years = useTaxYearConfigs();
   const remove = useDeleteDirectIncome();
@@ -436,17 +459,24 @@ export function IncomePage() {
     next.delete("new");
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
+  useEffect(() => {
+    if (!requestedIncome.data) return;
+    setEditing(requestedIncome.data);
+    setOpen(true);
+  }, [requestedIncome.data]);
   if (income.isLoading) return <div>Loading income...</div>;
   if (income.error) return <QueryErrorState onRetry={() => income.refetch()} />;
   const rows = income.data ?? [];
   const total = rows.reduce((sum, row) => sum + row.gross_amount, 0);
+  const received = rows.reduce((sum, row) => sum + row.amount, 0);
+  const cis = rows.reduce((sum, row) => sum + row.cis_deduction_amount, 0);
   const vat = rows.reduce((sum, row) => sum + row.vat_amount, 0);
   return (
     <div className="space-y-6">
       <PageHeader
         eyebrow="Sales"
         title="Direct income"
-        description="Record business money received when there is no invoice to settle."
+        description="Record bank receipts and other business income when you did not raise an invoice, including weekly CIS payments."
         primaryAction={
           <Button
             onClick={() => {
@@ -459,12 +489,23 @@ export function IncomePage() {
           </Button>
         }
       />
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <SummaryTile
           label="Gross income"
           value={money.format(total)}
           detail={`${rows.length} entries`}
           tone="positive"
+        />
+        <SummaryTile
+          label="Paid into bank"
+          value={money.format(received)}
+          detail="Net receipts recorded"
+          tone="positive"
+        />
+        <SummaryTile
+          label="CIS withheld"
+          value={money.format(cis)}
+          detail="Tax sent to HMRC by contractors"
         />
         <SummaryTile
           label="VAT included"
@@ -490,7 +531,7 @@ export function IncomePage() {
         <EmptyState
           icon={WalletCards}
           title="No direct income recorded"
-          description="Use this ledger for cash sales, card receipts, platform payouts, and other business income that has no invoice."
+          description="Use this ledger for CIS deposits, bank transfers, card receipts, platform payouts, and other business income with no invoice."
           action={
             <Button onClick={() => setOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />
@@ -500,24 +541,25 @@ export function IncomePage() {
         />
       ) : (
         <div className="overflow-x-auto rounded-md border bg-card">
-          <div className="grid min-w-190 grid-cols-[120px_minmax(220px,1fr)_170px_130px_44px] gap-3 border-b bg-muted/50 px-4 py-3 text-xs font-semibold text-muted-foreground">
+          <div className="grid min-w-220 grid-cols-[120px_minmax(220px,1fr)_170px_130px_130px_44px] gap-3 border-b bg-muted/50 px-4 py-3 text-xs font-semibold text-muted-foreground">
             <span>Date</span>
             <span>Description</span>
             <span>Type / client</span>
-            <span className="text-right">Gross</span>
+            <span className="text-right">Paid into bank</span>
+            <span className="text-right">Gross income</span>
             <span />
           </div>
           {rows.map((row) => (
             <div
               key={row.id}
-              className="grid min-w-190 grid-cols-[120px_minmax(220px,1fr)_170px_130px_44px] items-center gap-3 border-b px-4 py-3 text-sm last:border-0"
+              className="grid min-w-220 grid-cols-[120px_minmax(220px,1fr)_170px_130px_130px_44px] items-center gap-3 border-b px-4 py-3 text-sm last:border-0"
             >
               <span>{row.income_date}</span>
               <span>
                 <span className="block font-medium">{row.description}</span>
                 {row.cis_deduction_amount > 0 && (
                   <span className="text-xs text-amber-700">
-                    {money.format(row.cis_deduction_amount)} CIS deducted
+                    {money.format(row.cis_deduction_amount)} CIS withheld
                   </span>
                 )}
               </span>
@@ -530,6 +572,9 @@ export function IncomePage() {
                 <span className="text-xs text-muted-foreground">
                   {row.client_name || row.payment_method}
                 </span>
+              </span>
+              <span className="text-right font-medium">
+                {money.format(row.amount)}
               </span>
               <span className="text-right font-semibold">
                 {money.format(row.gross_amount)}

@@ -1,4 +1,5 @@
-import { Component, type ReactNode } from "react";
+import { invoke, isTauri } from "@tauri-apps/api/core";
+import { Component, type ErrorInfo, type ReactNode } from "react";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -23,6 +24,27 @@ export class ErrorBoundary extends Component<
     return { hasError: true, error };
   }
 
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("SoleTrader encountered an unrecoverable UI error.", {
+      error,
+      componentStack: info.componentStack,
+    });
+    if (isTauri()) {
+      void invoke("log_frontend_error", {
+        input: {
+          message: error.message,
+          stack: error.stack ?? "",
+          componentStack: info.componentStack ?? "",
+        },
+      }).catch((loggingError) =>
+        console.error(
+          "SoleTrader could not persist the crash log.",
+          loggingError,
+        ),
+      );
+    }
+  }
+
   render() {
     if (this.state.hasError) {
       if (this.props.fallback) {
@@ -39,10 +61,10 @@ export class ErrorBoundary extends Component<
               {this.state.error?.message || "An unexpected error occurred."}
             </p>
             <button
-              onClick={() => this.setState({ hasError: false, error: null })}
+              onClick={() => window.location.reload()}
               className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90"
             >
-              Try again
+              Reload app
             </button>
           </div>
         </div>

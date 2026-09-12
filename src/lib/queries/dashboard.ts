@@ -11,6 +11,7 @@ import type { TaxYearConfig, UserProfile } from "@/types/database";
 interface DatedAmount {
   date: string;
   amount: number;
+  category?: string;
 }
 interface DatedSale {
   date: string;
@@ -119,6 +120,9 @@ async function loadYearCore(
     expenseRows,
     mileageRows,
     costRows,
+    supplierBillRows,
+    supplierBillCashRows,
+    adjustmentRows,
     openingRows,
   ] = await Promise.all([
     query<DatedSale>(
@@ -175,6 +179,50 @@ async function loadYearCore(
        WHERE c.deleted_at IS NULL AND v.cost_method = 'actual' AND c.date BETWEEN ? AND ?`,
       [config.year_start, config.year_end],
     ),
+    profile.accounting_basis === "accrual"
+      ? query<DatedExpense>(
+          `SELECT b.bill_date AS date, c.name AS category, b.gross_amount AS gross,
+            b.vat_amount AS vat, b.business_percent AS businessPercent,
+            b.vat_capital_asset AS vatCapitalAsset
+           FROM supplier_bills b INNER JOIN expense_categories c ON c.id = b.category_id
+           WHERE b.deleted_at IS NULL AND b.bill_date BETWEEN ? AND ?`,
+          [config.year_start, config.year_end],
+        )
+      : query<DatedExpense>(
+          `SELECT p.payment_date AS date, c.name AS category, p.amount AS gross,
+            p.amount * b.vat_amount / b.gross_amount AS vat,
+            b.business_percent AS businessPercent,
+            b.vat_capital_asset AS vatCapitalAsset
+           FROM supplier_bill_payments p INNER JOIN supplier_bills b ON b.id = p.bill_id
+           INNER JOIN expense_categories c ON c.id = b.category_id
+           WHERE b.deleted_at IS NULL AND p.payment_date BETWEEN ? AND ?`,
+          [config.year_start, config.year_end],
+        ),
+    query<DatedAmount>(
+      `SELECT p.payment_date AS date, p.amount FROM supplier_bill_payments p
+       INNER JOIN supplier_bills b ON b.id = p.bill_id
+       WHERE b.deleted_at IS NULL AND p.payment_date BETWEEN ? AND ?`,
+      [config.year_start, config.year_end],
+    ),
+    profile.accounting_basis === "accrual"
+      ? query<DatedAmount>(
+          `SELECT a.adjustment_date AS date, c.name AS category,
+            CASE WHEN a.adjustment_type = 'accrual' THEN a.amount ELSE -a.amount END AS amount
+           FROM accrual_adjustments a INNER JOIN expense_categories c ON c.id = a.category_id
+           WHERE a.deleted_at IS NULL AND a.adjustment_date BETWEEN ? AND ?
+           UNION ALL
+           SELECT a.reversal_date, c.name,
+            CASE WHEN a.adjustment_type = 'accrual' THEN -a.amount ELSE a.amount END
+           FROM accrual_adjustments a INNER JOIN expense_categories c ON c.id = a.category_id
+           WHERE a.deleted_at IS NULL AND a.reversal_date BETWEEN ? AND ?`,
+          [
+            config.year_start,
+            config.year_end,
+            config.year_start,
+            config.year_end,
+          ],
+        )
+      : Promise.resolve([]),
     includeOpening
       ? query<{ key: string; value: string }>(
           "SELECT key, value FROM app_settings WHERE key IN ('opening_income', 'opening_expenses', 'opening_tax_paid')",
@@ -215,11 +263,28 @@ async function loadYearCore(
       profile,
     ),
   }));
+  const mappedSupplierBillRows = supplierBillRows.map((row) => ({
+    date: row.date,
+    category: row.category ?? "",
+    vat: row.vat * (row.businessPercent / 100),
+    amount: allowableExpenseAmount(
+      row.gross,
+      row.vat,
+      row.businessPercent,
+      row.vatCapitalAsset === 1,
+      profile,
+    ),
+  }));
+  const recognisedExpenseRows = [
+    ...mappedExpenseRows,
+    ...mappedSupplierBillRows,
+    ...adjustmentRows,
+  ];
   const income =
     selectedIncomeRows.reduce((sum, row) => sum + row.amount, 0) +
     (opening.opening_income ?? 0);
   const expenses =
-    [...mappedExpenseRows, ...mileageRows, ...mappedCostRows].reduce(
+    [...recognisedExpenseRows, ...mileageRows, ...mappedCostRows].reduce(
       (sum, row) => sum + row.amount,
       0,
     ) + (opening.opening_expenses ?? 0);
@@ -228,6 +293,7 @@ async function loadYearCore(
     (opening.opening_income ?? 0);
   const cashExpenses =
     [...expenseRows, ...costRows].reduce((sum, row) => sum + row.gross, 0) +
+    supplierBillCashRows.reduce((sum, row) => sum + row.amount, 0) +
     (opening.opening_expenses ?? 0);
 
   return {
@@ -238,7 +304,7 @@ async function loadYearCore(
     cashExpenses: round(cashExpenses),
     taxPaid: opening.opening_tax_paid ?? 0,
     selectedIncomeRows,
-    expenseRows: mappedExpenseRows,
+    expenseRows: recognisedExpenseRows,
     mileageRows,
     costRows: mappedCostRows,
     openingIncome: opening.opening_income ?? 0,
@@ -282,7 +348,6 @@ export function useDashboardData(taxYear: string) {
 
       const [
         invoiceAlerts,
-        categoryRows,
         clientRows,
         previousConfigs,
         unmatchedBankRows,
@@ -301,14 +366,6 @@ export function useDashboardData(taxYear: string) {
            FROM invoices i LEFT JOIN (SELECT invoice_id, SUM(amount) AS amount FROM credit_notes GROUP BY invoice_id) credits ON credits.invoice_id = i.id
            WHERE i.deleted_at IS NULL AND i.is_quote = 0 AND i.status NOT IN ('draft', 'paid', 'cancelled') AND i.tax_year = ?`,
           [taxYear],
-        ),
-        query<NamedAmount>(
-          `SELECT c.name, COALESCE(SUM((e.amount - CASE
-            WHEN ? = 'unregistered' OR (? = 'flat_rate' AND e.vat_capital_asset = 0) THEN 0
-            ELSE e.vat_amount END) * e.business_percent / 100), 0) AS amount
-           FROM expenses e INNER JOIN expense_categories c ON c.id = e.category_id
-           WHERE e.deleted_at IS NULL AND e.tax_year = ? GROUP BY c.id ORDER BY amount DESC`,
-          [profile.vat_status, profile.vat_scheme, taxYear],
         ),
         profile.accounting_basis === "cash"
           ? query<NamedSale>(
@@ -404,7 +461,18 @@ export function useDashboardData(taxYear: string) {
       const vehicleBreakdown =
         core.mileageRows.reduce((sum, row) => sum + row.amount, 0) +
         core.costRows.reduce((sum, row) => sum + row.amount, 0);
-      const expenseCategories = categoryRows.filter((row) => row.amount > 0);
+      const groupedExpenses = new Map<string, number>();
+      core.expenseRows.forEach((row) =>
+        groupedExpenses.set(
+          row.category ?? "Other business expenses",
+          (groupedExpenses.get(row.category ?? "Other business expenses") ??
+            0) + row.amount,
+        ),
+      );
+      const expenseCategories = [...groupedExpenses]
+        .map(([name, amount]) => ({ name, amount: round(amount) }))
+        .filter((row) => row.amount !== 0)
+        .sort((left, right) => right.amount - left.amount);
       if (vehicleBreakdown > 0)
         expenseCategories.push({
           name: "Vehicle deductions",

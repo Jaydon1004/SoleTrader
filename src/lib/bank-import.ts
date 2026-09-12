@@ -28,6 +28,7 @@ export interface MatchCandidate {
   date: string;
   amount: number;
   label: string;
+  linkedBankTransactionId?: number | null;
 }
 
 export interface MatchResult extends MatchCandidate {

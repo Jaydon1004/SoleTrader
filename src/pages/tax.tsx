@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Banknote,
   CalendarDays,
@@ -195,6 +196,7 @@ function formatDeadline(value: string) {
 }
 
 export function TaxPage() {
+  const [searchParams] = useSearchParams();
   const currentTaxYear = useAppStore((state) => state.currentTaxYear);
   const setCurrentTaxYear = useAppStore((state) => state.setCurrentTaxYear);
   const { data: taxYears } = useTaxYearConfigs();
@@ -219,12 +221,29 @@ export function TaxPage() {
   );
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState("");
-  const [workflowTab, setWorkflowTab] = useState("inputs");
+  const requestedSection = searchParams.get("section");
+  const [workflowTab, setWorkflowTab] = useState(() =>
+    ["inputs", "breakdown", "payments", "allowances", "cis"].includes(
+      requestedSection ?? "",
+    )
+      ? requestedSection!
+      : "inputs",
+  );
 
   useEffect(() => {
     setForm(savedInput ?? defaultTaxCalculatorInput(currentTaxYear));
     setSaved(false);
   }, [savedInput, currentTaxYear]);
+
+  useEffect(() => {
+    if (
+      requestedSection &&
+      ["inputs", "breakdown", "payments", "allowances", "cis"].includes(
+        requestedSection,
+      )
+    )
+      setWorkflowTab(requestedSection);
+  }, [requestedSection]);
 
   if (dashboardLoading || inputLoading || advancedTaxLoading)
     return <LoadingSpinner />;

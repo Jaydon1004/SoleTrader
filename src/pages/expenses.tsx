@@ -41,6 +41,7 @@ import {
   useBulkCategoriseExpenses,
   useBulkDeleteExpenses,
   useDueRecurringExpenses,
+  useExpense,
   useExpenseCategories,
   useExpenses,
   useProcessRecurringExpenses,
@@ -189,6 +190,12 @@ export function ExpensesPage() {
   const [showDeleted, setShowDeleted] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const requestedExpenseId = Number(searchParams.get("open"));
+  const requestedExpense = useExpense(
+    Number.isInteger(requestedExpenseId) && requestedExpenseId > 0
+      ? requestedExpenseId
+      : null,
+  );
   useEffect(() => {
     if (searchParams.get("new") !== "expense") return;
     setEditingExpense(null);
@@ -197,6 +204,11 @@ export function ExpensesPage() {
     next.delete("new");
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
+  useEffect(() => {
+    if (!requestedExpense.data) return;
+    setEditingExpense(requestedExpense.data);
+    setEditorOpen(true);
+  }, [requestedExpense.data]);
   const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [error, setError] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());

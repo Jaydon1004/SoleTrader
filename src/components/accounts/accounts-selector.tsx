@@ -109,8 +109,19 @@ export function AccountsSelector({
     setError("");
     setNotice("");
     try {
-      const path = await backupBusinessWorkspace(workspace.id, destination);
-      setNotice(`Backup completed: ${path}`);
+      const result = await backupBusinessWorkspace(workspace.id, destination);
+      setWorkspaces((current) =>
+        current.map((item) =>
+          item.id === workspace.id
+            ? {
+                ...item,
+                lastBackupAt: result.completedAt,
+                lastBackupFileCount: result.fileCount,
+              }
+            : item,
+        ),
+      );
+      setNotice(`Verified backup completed: ${result.path}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -267,6 +278,19 @@ export function AccountsSelector({
                       {new Date(workspace.updatedAt).toLocaleDateString(
                         "en-GB",
                       )}
+                    </p>
+                    <p
+                      className={`text-xs ${
+                        workspace.lastBackupAt &&
+                        Date.now() - workspace.lastBackupAt <=
+                          30 * 24 * 60 * 60 * 1000
+                          ? "text-emerald-700"
+                          : "text-amber-700"
+                      }`}
+                    >
+                      {workspace.lastBackupAt
+                        ? `Verified backup ${new Date(workspace.lastBackupAt).toLocaleDateString("en-GB")} · ${workspace.lastBackupFileCount ?? 0} files`
+                        : "No verified backup recorded"}
                     </p>
                   </div>
                 </button>

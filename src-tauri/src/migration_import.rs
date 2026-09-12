@@ -95,14 +95,27 @@ async fn import_at(
             let date = text(&row.values, "date");
             let description = text(&row.values, "description");
             let amount = number(&row.values, "amount")?;
-            let vat = if row.values.get("vat").is_some() { number(&row.values, "vat")? } else { 0.0 };
+            let vat = if row.values.get("vat").is_some() {
+                number(&row.values, "vat")?
+            } else {
+                0.0
+            };
             let tax_year = tax_year_for_date(&date)?;
-            if description.is_empty() || !amount.is_finite() || amount <= 0.0 || !vat.is_finite() || vat < 0.0 || vat > amount {
+            if description.is_empty()
+                || !amount.is_finite()
+                || amount <= 0.0
+                || !vat.is_finite()
+                || vat < 0.0
+                || vat > amount
+            {
                 return Err("Imported income values are invalid.".into());
             }
             let exists = sqlx::query_scalar::<_, i64>("SELECT EXISTS(SELECT 1 FROM direct_income WHERE income_date = ? AND amount = ? AND lower(description) = lower(?) AND deleted_at IS NULL)")
                 .bind(&date).bind(amount).bind(&description).fetch_one(&mut *transaction).await.map_err(|error| error.to_string())?;
-            if exists == 1 { duplicates += 1; continue; }
+            if exists == 1 {
+                duplicates += 1;
+                continue;
+            }
             sqlx::query("INSERT INTO direct_income (income_date, description, income_type, amount, gross_amount, vat_amount, payment_method, notes, tax_year) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
                 .bind(date).bind(description).bind({ let value = text(&row.values, "type"); if value.is_empty() { "sale".to_string() } else { value } }).bind(amount).bind(amount).bind(vat).bind(text(&row.values, "paymentMethod")).bind(text(&row.values, "notes")).bind(tax_year)
                 .execute(&mut *transaction).await.map_err(|error| error.to_string())?;

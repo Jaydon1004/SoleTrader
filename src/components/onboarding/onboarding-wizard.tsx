@@ -43,6 +43,7 @@ export function OnboardingWizard() {
   const [profileData, setProfileData] = useState<Partial<UserProfile>>({
     accounting_basis: "cash",
     vat_status: "unregistered",
+    vat_scheme: "standard",
     student_loan_plan: "none",
     cis_status: "none",
   });

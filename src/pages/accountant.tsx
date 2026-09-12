@@ -8,6 +8,8 @@ import {
   FileSpreadsheet,
   FolderOpen,
   Loader2,
+  LockKeyhole,
+  LockOpen,
   PackageCheck,
   Paperclip,
   ReceiptText,
@@ -18,12 +20,23 @@ import {
   exportAccountantPackage,
   type AccountantPackageResult,
 } from "@/lib/accountant-package";
+import {
+  rebuildShadowLedger,
+  type LedgerSummary,
+  useCloseYearEnd,
+  useReopenYearEnd,
+  useYearEndStatus,
+} from "@/lib/ledger";
 import { useDashboardData } from "@/lib/queries/dashboard";
 import { useTaxYearConfigs } from "@/lib/queries/settings";
 import { useAppStore } from "@/stores/app-store";
 import { LoadingSpinner } from "@/components/loading";
+import { AccrualAccountingPanel } from "@/components/accrual-accounting-panel";
+import { YearEndHandoffPanel } from "@/components/year-end-handoff-panel";
+import { useFeedback } from "@/components/feedback-provider";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { useYearEndHandoff } from "@/lib/year-end-handoff";
 import {
   Select,
   SelectContent,
@@ -87,8 +100,14 @@ export function AccountantPage() {
   const setCurrentTaxYear = useAppStore((state) => state.setCurrentTaxYear);
   const { data: taxYears } = useTaxYearConfigs();
   const dashboardQuery = useDashboardData(currentTaxYear);
+  const yearEndQuery = useYearEndStatus(currentTaxYear);
+  const handoffQuery = useYearEndHandoff(currentTaxYear);
+  const closeYear = useCloseYearEnd();
+  const reopenYear = useReopenYearEnd();
+  const { confirm, toast } = useFeedback();
   const [exporting, setExporting] = useState(false);
   const [result, setResult] = useState<AccountantPackageResult | null>(null);
+  const [ledger, setLedger] = useState<LedgerSummary | null>(null);
   const [error, setError] = useState("");
 
   if (dashboardQuery.isLoading) return <LoadingSpinner />;
@@ -107,21 +126,59 @@ export function AccountantPage() {
 
   const yearEnded =
     new Date(`${dashboard.config.year_end}T23:59:59`).getTime() < Date.now();
+  const handoff = handoffQuery.data;
+  const banksConfirmed =
+    !!handoff?.bankConfirmations.length &&
+    handoff.bankConfirmations.every(
+      (bank) =>
+        bank.confirmed_complete === 1 &&
+        bank.statement_start <= dashboard.config.year_start &&
+        bank.statement_end >= dashboard.config.year_end,
+    );
   const readyCount = [
     yearEnded,
     dashboard.unmatchedBankCount === 0,
     dashboard.missingReceiptCount === 0,
+    ledger?.balanced === true,
+    handoff?.details.questionnaire_complete === 1,
+    handoff?.details.personal_tax_complete === 1,
+    banksConfirmed,
+    handoff?.details.approved === 1,
   ].filter(Boolean).length;
   const createPackage = async () => {
     setExporting(true);
     setError("");
     setResult(null);
     try {
+      const ledgerSummary = await rebuildShadowLedger();
+      setLedger(ledgerSummary);
       setResult(await exportAccountantPackage(currentTaxYear, dashboard));
     } catch (caught) {
       setError(accountantExportErrorMessage(caught));
     } finally {
       setExporting(false);
+    }
+  };
+  const toggleYearClose = async () => {
+    const closed = yearEndQuery.data?.status === "closed";
+    const accepted = await confirm({
+      title: closed ? `Reopen ${currentTaxYear}?` : `Close ${currentTaxYear}?`,
+      description: closed
+        ? "Financial records in this tax year will become editable again."
+        : "SoleTrader will verify the ledger and lock dated financial records. You can reopen the year later if a correction is required.",
+      confirmLabel: closed ? "Reopen tax year" : "Close tax year",
+      destructive: closed,
+    });
+    if (!accepted) return;
+    try {
+      if (closed) await reopenYear.mutateAsync(currentTaxYear);
+      else {
+        const closedYear = await closeYear.mutateAsync(currentTaxYear);
+        setLedger(closedYear.ledger);
+      }
+      toast(closed ? "Tax year reopened" : "Tax year closed");
+    } catch (caught) {
+      setError(accountantExportErrorMessage(caught));
     }
   };
 
@@ -143,6 +200,7 @@ export function AccountantPage() {
           onValueChange={(value) => {
             setCurrentTaxYear(value);
             setResult(null);
+            setLedger(null);
             setError("");
           }}
         >
@@ -201,7 +259,7 @@ export function AccountantPage() {
                 </p>
               </div>
               <span className="shrink-0 text-sm font-semibold text-primary">
-                {readyCount} of 3 clear
+                {readyCount} of 8 clear
               </span>
             </div>
             <div className="border-y">
@@ -238,8 +296,56 @@ export function AccountantPage() {
                     : "Add available receipts before creating the final handoff."
                 }
               />
+              <ReadinessItem
+                ready={ledger?.balanced === true}
+                title={
+                  ledger?.balanced
+                    ? "Shadow ledger reconciled"
+                    : "Ledger reconciliation pending"
+                }
+                detail={
+                  ledger?.balanced
+                    ? `${ledger.entries} source entries produce equal debit and credit totals.`
+                    : "The ledger is rebuilt and checked automatically before each accountant handoff."
+                }
+              />
+              <ReadinessItem
+                ready={handoff?.details.questionnaire_complete === 1}
+                title="Business year-end declarations"
+                detail="Stock, cash, finance, capital, drawings and private-use information reviewed."
+              />
+              <ReadinessItem
+                ready={handoff?.details.personal_tax_complete === 1}
+                title="Personal tax checklist"
+                detail="Employment, pensions, interest, dividends, benefits, loans and payments reviewed."
+              />
+              <ReadinessItem
+                ready={banksConfirmed}
+                title="Bank statement coverage confirmed"
+                detail="Every active account covers the full tax year with a confirmed closing balance."
+              />
+              <ReadinessItem
+                ready={handoff?.details.approved === 1}
+                title="Owner approval recorded"
+                detail="The named owner has approved the year-end information for handoff."
+              />
             </div>
           </section>
+
+          {handoff && (
+            <YearEndHandoffPanel
+              data={handoff}
+              yearStart={dashboard.config.year_start}
+              yearEnd={dashboard.config.year_end}
+            />
+          )}
+
+          <AccrualAccountingPanel
+            accountingBasis={dashboard.accountingBasis}
+            taxYear={currentTaxYear}
+            yearStart={dashboard.config.year_start}
+            yearEnd={dashboard.config.year_end}
+          />
         </div>
 
         <aside className="h-fit border-l-4 border-primary bg-muted/45 p-5 xl:sticky xl:top-6">
@@ -257,8 +363,10 @@ export function AccountantPage() {
           <dl className="mt-5 space-y-2 border-y py-4 text-sm">
             <div className="flex justify-between gap-3">
               <dt className="text-muted-foreground">Accounting basis</dt>
-              <dd className="font-semibold capitalize">
-                {dashboard.accountingBasis}
+              <dd className="font-semibold">
+                {dashboard.accountingBasis === "cash"
+                  ? "Receipts basis (cash basis)"
+                  : "Accrual basis"}
               </dd>
             </div>
             <div className="flex justify-between gap-3">
@@ -295,6 +403,34 @@ export function AccountantPage() {
             )}
             {exporting ? "Creating handoff..." : "Create accountant handoff"}
           </Button>
+          <Button
+            className="mt-2 w-full"
+            variant="outline"
+            disabled={
+              closeYear.isPending ||
+              reopenYear.isPending ||
+              (!yearEnded && yearEndQuery.data?.status !== "closed") ||
+              (yearEndQuery.data?.status !== "closed" &&
+                (dashboard.unmatchedBankCount > 0 ||
+                  dashboard.missingReceiptCount > 0))
+            }
+            onClick={() => void toggleYearClose()}
+          >
+            {yearEndQuery.data?.status === "closed" ? (
+              <LockOpen className="mr-2 h-4 w-4" />
+            ) : (
+              <LockKeyhole className="mr-2 h-4 w-4" />
+            )}
+            {yearEndQuery.data?.status === "closed"
+              ? "Reopen tax year"
+              : "Close and lock tax year"}
+          </Button>
+          {yearEndQuery.data?.closed_at && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Closed{" "}
+              {new Date(yearEndQuery.data.closed_at).toLocaleString("en-GB")}
+            </p>
+          )}
           <p className="mt-3 text-xs leading-5 text-muted-foreground">
             Sensitive details such as your UTR and National Insurance number are
             included because your accountant will normally require them. Send
@@ -310,14 +446,7 @@ export function AccountantPage() {
         </Alert>
       )}
       {result && (
-        <Alert
-          variant={
-            result.counts.missingSupportingFiles ||
-            result.counts.unmatchedBankTransactions
-              ? "warning"
-              : "success"
-          }
-        >
+        <Alert variant={result.reviewItems > 0 ? "warning" : "success"}>
           <PackageCheck className="h-4 w-4" />
           <AlertTitle>Accountant handoff created</AlertTitle>
           <AlertDescription>
@@ -326,6 +455,10 @@ export function AccountantPage() {
               {result.counts.missingSupportingFiles
                 ? `${result.counts.missingSupportingFiles} referenced files were missing; see the evidence index.`
                 : "All referenced evidence was included."}
+            </p>
+            <p className="mt-1">
+              {result.reconciledAccounts} bank account(s) summarised.{" "}
+              {result.reviewItems} control item(s) require review.
             </p>
             <p className="mt-1 break-all text-xs">{result.directory}</p>
             <Button

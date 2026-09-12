@@ -20,7 +20,7 @@ export interface BankTransaction {
   matched_invoice_id: number | null;
   matched_expense_id: number | null;
   matched_payment_id: number | null;
-    matched_income_id: number | null;
+  matched_income_id: number | null;
   manual_category_id: number | null;
   status: "unmatched" | "matched" | "ignored";
   source_file: string;
@@ -61,6 +61,7 @@ export interface BankAccount {
   id: number;
   name: string;
   account_type: string;
+  account_use: "business" | "mixed" | "personal";
   opening_balance: number;
   archived: number;
 }
@@ -75,6 +76,7 @@ export interface BankFilters {
 export interface BankMatchOptions {
   payments: MatchCandidate[];
   expenses: MatchCandidate[];
+  income: MatchCandidate[];
   invoices: Array<{
     id: number;
     label: string;
@@ -89,7 +91,7 @@ function invalidate(queryClient: ReturnType<typeof useQueryClient>) {
   queryClient.invalidateQueries({ queryKey: ["bank-import-batches"] });
   queryClient.invalidateQueries({ queryKey: ["invoices"] });
   queryClient.invalidateQueries({ queryKey: ["expenses"] });
-    queryClient.invalidateQueries({ queryKey: ["direct-income"] });
+  queryClient.invalidateQueries({ queryKey: ["direct-income"] });
   queryClient.invalidateQueries({ queryKey: ["dashboard"] });
   queryClient.invalidateQueries({ queryKey: ["vat"] });
   queryClient.invalidateQueries({ queryKey: ["reports"] });
@@ -99,21 +101,21 @@ function invalidate(queryClient: ReturnType<typeof useQueryClient>) {
 
 const paymentCandidatesSql = `
   SELECT p.id, p.invoice_id AS recordId, p.payment_date AS date, COALESCE(p.cash_amount, p.amount) AS amount,
-    CASE WHEN i.source_type = 'self_billed' THEN i.external_reference ELSE i.invoice_number END || ' · ' || COALESCE(NULLIF(c.company, ''), c.name) AS label
+    CASE WHEN i.source_type = 'self_billed' THEN i.external_reference ELSE i.invoice_number END || ' · ' || COALESCE(NULLIF(c.company, ''), c.name) AS label,
+    b.id AS linkedBankTransactionId
   FROM invoice_payments p
   INNER JOIN invoices i ON i.id = p.invoice_id
   INNER JOIN clients c ON c.id = i.client_id
-  WHERE i.deleted_at IS NULL AND NOT EXISTS (
-    SELECT 1 FROM bank_transactions b WHERE b.matched_payment_id = p.id AND b.status = 'matched'
-  ) ORDER BY p.payment_date DESC`;
+  LEFT JOIN bank_transactions b ON b.matched_payment_id = p.id AND b.status = 'matched'
+  WHERE i.deleted_at IS NULL ORDER BY p.payment_date DESC`;
 
 const expenseCandidatesSql = `
   SELECT e.id, e.id AS recordId, e.date, e.amount,
-    COALESCE(NULLIF(e.supplier, ''), e.description) || ' · ' || ec.name AS label
+    COALESCE(NULLIF(e.supplier, ''), e.description) || ' · ' || ec.name AS label,
+    b.id AS linkedBankTransactionId
   FROM expenses e INNER JOIN expense_categories ec ON ec.id = e.category_id
-  WHERE e.deleted_at IS NULL AND NOT EXISTS (
-    SELECT 1 FROM bank_transactions b WHERE b.matched_expense_id = e.id AND b.status = 'matched'
-  ) ORDER BY e.date DESC`;
+  LEFT JOIN bank_transactions b ON b.matched_expense_id = e.id AND b.status = 'matched'
+  WHERE e.deleted_at IS NULL ORDER BY e.date DESC`;
 
 export function useBankTransactions(filters: BankFilters) {
   return useQuery({
@@ -160,22 +162,76 @@ export function useBankTransactions(filters: BankFilters) {
 export function useBankAccounts() {
   return useQuery({
     queryKey: ["bank-accounts"],
-    queryFn: () => query<BankAccount>("SELECT * FROM bank_accounts WHERE archived = 0 ORDER BY name"),
+    queryFn: () =>
+      query<BankAccount>(
+        "SELECT * FROM bank_accounts WHERE archived = 0 ORDER BY name",
+      ),
   });
 }
 
 export function useCreateBankAccount() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ name, accountType, openingBalance }: { name: string; accountType: string; openingBalance: number }) => execute("INSERT INTO bank_accounts (name, account_type, opening_balance) VALUES (?, ?, ?)", [name.trim(), accountType, openingBalance]),
-    onSuccess: () => { client.invalidateQueries({ queryKey: ["bank-accounts"] }); client.invalidateQueries({ queryKey: ["bank-reconciliation"] }); },
+    mutationFn: ({
+      name,
+      accountType,
+      accountUse,
+      openingBalance,
+    }: {
+      name: string;
+      accountType: string;
+      accountUse: BankAccount["account_use"];
+      openingBalance: number;
+    }) =>
+      execute(
+        "INSERT INTO bank_accounts (name, account_type, account_use, opening_balance) VALUES (?, ?, ?, ?)",
+        [name.trim(), accountType, accountUse, openingBalance],
+      ),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["bank-accounts"] });
+      client.invalidateQueries({ queryKey: ["bank-reconciliation"] });
+    },
+  });
+}
+
+export function useUpdateBankAccountUse() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      accountUse,
+    }: {
+      id: number;
+      accountUse: BankAccount["account_use"];
+    }) =>
+      execute(
+        "UPDATE bank_accounts SET account_use = ?, updated_at = datetime('now') WHERE id = ?",
+        [accountUse, id],
+      ),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: ["bank-accounts"] });
+      client.invalidateQueries({ queryKey: ["bank-reconciliation"] });
+    },
   });
 }
 
 export function useLinkBankTransfer() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ firstTransactionId, secondTransactionId }: { firstTransactionId: number; secondTransactionId: number }) => invoke("link_bank_transfer", { input: { workspace_id: getActiveWorkspaceId(), first_transaction_id: firstTransactionId, second_transaction_id: secondTransactionId } }),
+    mutationFn: ({
+      firstTransactionId,
+      secondTransactionId,
+    }: {
+      firstTransactionId: number;
+      secondTransactionId: number;
+    }) =>
+      invoke("link_bank_transfer", {
+        input: {
+          workspace_id: getActiveWorkspaceId(),
+          first_transaction_id: firstTransactionId,
+          second_transaction_id: secondTransactionId,
+        },
+      }),
     onSuccess: () => invalidate(client),
   });
 }
@@ -183,7 +239,27 @@ export function useLinkBankTransfer() {
 export function useSplitBankTransaction() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (input: { transactionId: number; firstDescription: string; firstAmount: number; firstClassification: string; secondDescription: string; secondAmount: number; secondClassification: string }) => invoke("split_bank_transaction", { input: { workspace_id: getActiveWorkspaceId(), bank_transaction_id: input.transactionId, first_description: input.firstDescription, first_amount: input.firstAmount, first_classification: input.firstClassification, second_description: input.secondDescription, second_amount: input.secondAmount, second_classification: input.secondClassification } }),
+    mutationFn: (input: {
+      transactionId: number;
+      firstDescription: string;
+      firstAmount: number;
+      firstClassification: string;
+      secondDescription: string;
+      secondAmount: number;
+      secondClassification: string;
+    }) =>
+      invoke("split_bank_transaction", {
+        input: {
+          workspace_id: getActiveWorkspaceId(),
+          bank_transaction_id: input.transactionId,
+          first_description: input.firstDescription,
+          first_amount: input.firstAmount,
+          first_classification: input.firstClassification,
+          second_description: input.secondDescription,
+          second_amount: input.secondAmount,
+          second_classification: input.secondClassification,
+        },
+      }),
     onSuccess: () => invalidate(client),
   });
 }
@@ -191,8 +267,20 @@ export function useSplitBankTransaction() {
 export function useClassifyBankTransaction() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ transactionId, classification }: { transactionId: number; classification: string }) =>
-      invoke("classify_bank_transaction", { input: { workspace_id: getActiveWorkspaceId(), bank_transaction_id: transactionId, classification } }),
+    mutationFn: ({
+      transactionId,
+      classification,
+    }: {
+      transactionId: number;
+      classification: string;
+    }) =>
+      invoke("classify_bank_transaction", {
+        input: {
+          workspace_id: getActiveWorkspaceId(),
+          bank_transaction_id: transactionId,
+          classification,
+        },
+      }),
     onSuccess: () => invalidate(queryClient),
   });
 }
@@ -200,8 +288,20 @@ export function useClassifyBankTransaction() {
 export function useBulkClassifyBankTransactions() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ transactionIds, classification }: { transactionIds: number[]; classification: string }) =>
-      invoke<number>("bulk_classify_bank_transactions", { input: { workspace_id: getActiveWorkspaceId(), bank_transaction_ids: transactionIds, classification } }),
+    mutationFn: ({
+      transactionIds,
+      classification,
+    }: {
+      transactionIds: number[];
+      classification: string;
+    }) =>
+      invoke<number>("bulk_classify_bank_transactions", {
+        input: {
+          workspace_id: getActiveWorkspaceId(),
+          bank_transaction_ids: transactionIds,
+          classification,
+        },
+      }),
     onSuccess: () => invalidate(queryClient),
   });
 }
@@ -247,9 +347,17 @@ export function useBankMatchOptions() {
   return useQuery({
     queryKey: ["bank-match-options"],
     queryFn: async (): Promise<BankMatchOptions> => {
-      const [payments, expenses, invoices] = await Promise.all([
+      const [payments, expenses, income, invoices] = await Promise.all([
         query<MatchCandidate>(paymentCandidatesSql),
         query<MatchCandidate>(expenseCandidatesSql),
+        query<MatchCandidate>(
+          `SELECT d.id, d.id AS recordId, d.income_date AS date, d.amount,
+             d.description || CASE WHEN COALESCE(NULLIF(c.company, ''), c.name, '') = '' THEN '' ELSE ' · ' || COALESCE(NULLIF(c.company, ''), c.name) END AS label,
+             COALESCE(b.id, d.bank_transaction_id) AS linkedBankTransactionId
+           FROM direct_income d LEFT JOIN clients c ON c.id = d.client_id
+           LEFT JOIN bank_transactions b ON b.matched_income_id = d.id AND b.status = 'matched'
+           WHERE d.deleted_at IS NULL ORDER BY d.income_date DESC`,
+        ),
         query<{
           id: number;
           label: string;
@@ -265,7 +373,7 @@ export function useBankMatchOptions() {
            ORDER BY i.issue_date DESC`,
         ),
       ]);
-      return { payments, expenses, invoices };
+      return { payments, expenses, income, invoices };
     },
   });
 }
@@ -275,14 +383,23 @@ export function useImportBankTransactions() {
   return useMutation({
     mutationFn: ({
       sourceFile,
+      bankAccountId,
       rows,
     }: {
       sourceFile: string;
+      bankAccountId: number;
       rows: BankImportRow[];
     }) =>
       invoke<{ imported: number; duplicates: number; matched: number }>(
         "import_bank_transactions",
-        { input: { workspaceId: getActiveWorkspaceId(), sourceFile, rows } },
+        {
+          input: {
+            workspaceId: getActiveWorkspaceId(),
+            sourceFile,
+            bankAccountId,
+            rows,
+          },
+        },
       ),
     onSuccess: () => invalidate(queryClient),
   });
@@ -290,15 +407,21 @@ export function useImportBankTransactions() {
 
 export function useCheckBankDuplicates() {
   return useMutation({
-    mutationFn: async (hashes: string[]) => {
+    mutationFn: async ({
+      hashes,
+      bankAccountId,
+    }: {
+      hashes: string[];
+      bankAccountId: number;
+    }) => {
       const unique = [...new Set(hashes)];
       const duplicates = new Set<string>();
       for (let index = 0; index < unique.length; index += 900) {
         const chunk = unique.slice(index, index + 900);
         if (!chunk.length) continue;
         const rows = await query<{ hash: string }>(
-          `SELECT hash FROM bank_transactions WHERE hash IN (${chunk.map(() => "?").join(",")})`,
-          chunk,
+          `SELECT hash FROM bank_transactions WHERE bank_account_id = ? AND hash IN (${chunk.map(() => "?").join(",")})`,
+          [bankAccountId, ...chunk],
         );
         rows.forEach((row) => duplicates.add(row.hash));
       }
@@ -316,19 +439,17 @@ export function useMatchBankTransaction() {
       candidate,
     }: {
       transactionId: number;
-      kind: "payment" | "expense";
+      kind: "payment" | "expense" | "income";
       candidate: MatchCandidate;
     }) =>
-      execute(
-        `UPDATE bank_transactions SET matched_invoice_id = ?, matched_payment_id = ?, matched_expense_id = ?,
-       status = 'matched', match_confidence = 'manual', updated_at = datetime('now') WHERE id = ?`,
-        [
-          kind === "payment" ? candidate.recordId : null,
-          kind === "payment" ? candidate.id : null,
-          kind === "expense" ? candidate.recordId : null,
-          transactionId,
-        ],
-      ),
+      invoke("link_existing_bank_record", {
+        input: {
+          workspaceId: getActiveWorkspaceId(),
+          bankTransactionId: transactionId,
+          recordKind: kind,
+          recordId: candidate.id,
+        },
+      }),
     onSuccess: () => invalidate(queryClient),
   });
 }
@@ -337,10 +458,12 @@ export function useUnmatchBankTransaction() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: number) =>
-      execute(
-        "UPDATE bank_transactions SET matched_invoice_id = NULL, matched_payment_id = NULL, matched_expense_id = NULL, matched_income_id = NULL, status = 'unmatched', match_confidence = '', updated_at = datetime('now') WHERE id = ?",
-        [id],
-      ),
+      invoke("unmatch_bank_transaction", {
+        input: {
+          workspaceId: getActiveWorkspaceId(),
+          bankTransactionId: id,
+        },
+      }),
     onSuccess: () => invalidate(queryClient),
   });
 }
@@ -350,7 +473,7 @@ export function useIgnoreBankTransaction() {
   return useMutation({
     mutationFn: (id: number) =>
       execute(
-        "UPDATE bank_transactions SET status = 'ignored', updated_at = datetime('now') WHERE id = ?",
+        "UPDATE bank_transactions SET status = 'ignored', classification = 'ignored', match_confidence = 'manual', auto_classified = 0, updated_at = datetime('now') WHERE id = ?",
         [id],
       ),
     onSuccess: () => invalidate(queryClient),
@@ -390,9 +513,53 @@ export function useCreateExpenseFromBank() {
 export function useCreateDirectIncomeFromBank() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ transaction, description, incomeType, vatAmount, vatRate, paymentMethod, notes }: {
-      transaction: BankTransaction; description: string; incomeType: string; vatAmount: number; vatRate: number | null; paymentMethod: string; notes: string;
-    }) => invoke<number>("create_direct_income_from_bank", { input: { workspace_id: getActiveWorkspaceId(), bank_transaction_id: transaction.id, description, income_type: incomeType, vat_amount: vatAmount, vat_rate: vatRate, payment_method: paymentMethod, client_id: null, notes } }),
+    mutationFn: ({
+      transaction,
+      description,
+      incomeType,
+      vatAmount,
+      vatRate,
+      paymentMethod,
+      clientId,
+      notes,
+      grossAmount,
+      cisRate,
+      cisDeductionAmount,
+      cisPartyName,
+      cisPartyUtr,
+    }: {
+      transaction: BankTransaction;
+      description: string;
+      incomeType: string;
+      vatAmount: number;
+      vatRate: number | null;
+      paymentMethod: string;
+      clientId: number | null;
+      notes: string;
+      grossAmount: number;
+      cisRate: number;
+      cisDeductionAmount: number;
+      cisPartyName: string;
+      cisPartyUtr: string;
+    }) =>
+      invoke<number>("create_direct_income_from_bank", {
+        input: {
+          workspace_id: getActiveWorkspaceId(),
+          bank_transaction_id: transaction.id,
+          description,
+          income_type: incomeType,
+          vat_amount: vatAmount,
+          vat_rate: vatRate,
+          payment_method: paymentMethod,
+          client_id: clientId,
+          notes,
+          gross_amount: grossAmount,
+          cis_rate: cisRate,
+          cis_deduction_amount: cisDeductionAmount,
+          cis_party_name: cisPartyName,
+          cis_party_utr: cisPartyUtr,
+        },
+      }),
     onSuccess: () => invalidate(queryClient),
   });
 }

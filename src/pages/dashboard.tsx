@@ -207,7 +207,12 @@ export function DashboardPage() {
     });
   };
 
-  if (isLoading || vatQuery.isLoading || reminderLoading || advancedTax.isLoading)
+  if (
+    isLoading ||
+    vatQuery.isLoading ||
+    reminderLoading ||
+    advancedTax.isLoading
+  )
     return <LoadingSpinner />;
   if (
     error ||
@@ -297,7 +302,9 @@ export function DashboardPage() {
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Live{" "}
-            {data.accountingBasis === "cash" ? "cash basis" : "accrual basis"}{" "}
+            {data.accountingBasis === "cash"
+              ? "receipts basis (cash basis)"
+              : "accrual basis"}{" "}
             position
           </p>
         </div>
@@ -322,7 +329,7 @@ export function DashboardPage() {
           value={data.income}
           detail={
             data.accountingBasis === "cash"
-              ? "Gross payments received"
+              ? "Gross income for payments received, including bank transfers"
               : "Gross issued invoices"
           }
           icon={BadgePoundSterling}
@@ -380,8 +387,12 @@ export function DashboardPage() {
               </p>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">Cash received</p>
-              <p className="mt-1 text-2xl font-semibold">{money.format(data.cashReceived)}</p>
+              <p className="text-xs text-muted-foreground">
+                Paid into bank / received
+              </p>
+              <p className="mt-1 text-2xl font-semibold">
+                {money.format(data.cashReceived)}
+              </p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Tax liability</p>
@@ -414,7 +425,9 @@ export function DashboardPage() {
       <section>
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Estimated available cash</CardTitle>
+            <CardTitle className="text-base">
+              Estimated available cash
+            </CardTitle>
             <CardDescription>
               A practical cash view after money received, paid business costs,
               and the current tax reserve.
@@ -422,19 +435,37 @@ export function DashboardPage() {
           </CardHeader>
           <CardContent className="grid gap-3 sm:grid-cols-3">
             <div>
-              <p className="text-xs text-muted-foreground">Cash received</p>
-              <p className="mt-1 text-2xl font-semibold text-emerald-700 dark:text-emerald-400">{money.format(data.cashReceived)}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Includes post-CIS receipts</p>
+              <p className="text-xs text-muted-foreground">Money received</p>
+              <p className="mt-1 text-2xl font-semibold text-emerald-700 dark:text-emerald-400">
+                {money.format(data.cashReceived)}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Includes post-CIS receipts
+              </p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Expenses paid</p>
-              <p className="mt-1 text-2xl font-semibold">{money.format(data.cashExpenses)}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Actual recorded business payments</p>
+              <p className="mt-1 text-2xl font-semibold">
+                {money.format(data.cashExpenses)}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Actual recorded business payments
+              </p>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">Available after reserve</p>
-              <p className={`mt-1 text-2xl font-semibold ${data.cashReceived - data.cashExpenses - taxStillNeeded >= 0 ? "text-blue-700 dark:text-blue-400" : "text-destructive"}`}>{money.format(data.cashReceived - data.cashExpenses - taxStillNeeded)}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Cash received less expenses and estimated tax reserve</p>
+              <p className="text-xs text-muted-foreground">
+                Available after reserve
+              </p>
+              <p
+                className={`mt-1 text-2xl font-semibold ${data.cashReceived - data.cashExpenses - taxStillNeeded >= 0 ? "text-blue-700 dark:text-blue-400" : "text-destructive"}`}
+              >
+                {money.format(
+                  data.cashReceived - data.cashExpenses - taxStillNeeded,
+                )}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Money received less expenses and estimated tax reserve
+              </p>
             </div>
           </CardContent>
           <CardContent className="border-t pt-3 text-xs text-muted-foreground">
@@ -892,35 +923,52 @@ export function DashboardPage() {
               <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
                 <div className="flex justify-between gap-3">
                   <dt className="text-muted-foreground">Income</dt>
-                  <dd className="font-medium tabular-nums">{money.format(data.income)}</dd>
+                  <dd className="font-medium tabular-nums">
+                    {money.format(data.income)}
+                  </dd>
                 </div>
                 <div className="flex justify-between gap-3">
                   <dt className="text-muted-foreground">Allowable expenses</dt>
-                  <dd className="font-medium tabular-nums">{money.format(data.expenses)}</dd>
+                  <dd className="font-medium tabular-nums">
+                    {money.format(data.expenses)}
+                  </dd>
                 </div>
                 <div className="flex justify-between gap-3">
                   <dt className="text-muted-foreground">Recorded profit</dt>
-                  <dd className="font-medium tabular-nums">{money.format(data.profit)}</dd>
+                  <dd className="font-medium tabular-nums">
+                    {money.format(data.profit)}
+                  </dd>
                 </div>
                 <div className="flex justify-between gap-3">
                   <dt className="text-muted-foreground">Estimated liability</dt>
-                  <dd className="font-medium tabular-nums">{money.format(taxEstimate.totalLiability)}</dd>
+                  <dd className="font-medium tabular-nums">
+                    {money.format(taxEstimate.totalLiability)}
+                  </dd>
                 </div>
                 <div className="flex justify-between gap-3">
-                  <dt className="text-muted-foreground">Tax already deducted</dt>
-                  <dd className="font-medium tabular-nums">{money.format(taxEstimate.taxDeducted)}</dd>
+                  <dt className="text-muted-foreground">
+                    Tax already deducted
+                  </dt>
+                  <dd className="font-medium tabular-nums">
+                    {money.format(taxEstimate.taxDeducted)}
+                  </dd>
                 </div>
                 <div className="flex justify-between gap-3">
                   <dt className="text-muted-foreground">CIS deducted</dt>
-                  <dd className="font-medium tabular-nums">{money.format(advancedTax.data.cisReceived)}</dd>
+                  <dd className="font-medium tabular-nums">
+                    {money.format(advancedTax.data.cisReceived)}
+                  </dd>
                 </div>
                 <div className="flex justify-between gap-3 border-t pt-2 font-semibold sm:border-t-0 sm:pt-0">
                   <dt>Estimated amount to reserve</dt>
-                  <dd className="tabular-nums">{money.format(taxStillNeeded)}</dd>
+                  <dd className="tabular-nums">
+                    {money.format(taxStillNeeded)}
+                  </dd>
                 </div>
               </dl>
               <p className="mt-3 text-[11px] text-muted-foreground">
-                Estimate only. Check the full Self Assessment calculation and confirm figures with HMRC or an accountant.
+                Estimate only. Check the full Self Assessment calculation and
+                confirm figures with HMRC or an accountant.
               </p>
             </div>
             <EstimateNote />

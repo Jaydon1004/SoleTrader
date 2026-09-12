@@ -13,10 +13,10 @@ use tauri::{AppHandle, Manager};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-const SCHEMA_VERSION: i64 = 25;
+const SCHEMA_VERSION: i64 = 35;
 const BACKUP_FORMAT_VERSION: u32 = 1;
 static CATALOG_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-const MIGRATIONS: [&str; 25] = [
+const MIGRATIONS: [&str; 35] = [
     include_str!("../migrations/001_initial_schema.sql"),
     include_str!("../migrations/002_invoice_workflow.sql"),
     include_str!("../migrations/003_expense_workflow.sql"),
@@ -42,6 +42,16 @@ const MIGRATIONS: [&str; 25] = [
     include_str!("../migrations/023_bank_rules_transfers_splits.sql"),
     include_str!("../migrations/024_direct_income_cis.sql"),
     include_str!("../migrations/025_direct_income_editing.sql"),
+    include_str!("../migrations/026_trust_foundations.sql"),
+    include_str!("../migrations/027_accountant_handoff.sql"),
+    include_str!("../migrations/028_accrual_accounting.sql"),
+    include_str!("../migrations/029_bank_auto_classification.sql"),
+    include_str!("../migrations/030_bank_account_use.sql"),
+    include_str!("../migrations/031_bank_rule_scope.sql"),
+    include_str!("../migrations/032_personally_funded_expenses.sql"),
+    include_str!("../migrations/033_protect_bank_linked_records.sql"),
+    include_str!("../migrations/034_hmrc_handoff.sql"),
+    include_str!("../migrations/035_hmrc_opening_stock.sql"),
 ];
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -52,6 +62,18 @@ pub struct BusinessWorkspace {
     pub archived: bool,
     pub created_at: u64,
     pub updated_at: u64,
+    #[serde(default)]
+    pub last_backup_at: Option<u64>,
+    #[serde(default)]
+    pub last_backup_file_count: Option<usize>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupResult {
+    path: String,
+    completed_at: u64,
+    file_count: usize,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -686,6 +708,8 @@ async fn adopt_legacy_business_at(app_data: &Path) -> Result<Vec<BusinessWorkspa
         archived: false,
         created_at: timestamp,
         updated_at: timestamp,
+        last_backup_at: None,
+        last_backup_file_count: None,
     };
     write_catalog_at(&catalog_path_at(app_data), &[workspace.clone()])?;
     move_legacy_directory(&app_data.join("receipts"), &directory.join("receipts"))?;
@@ -783,6 +807,8 @@ pub async fn create_business_workspace(
         archived: false,
         created_at: timestamp,
         updated_at: timestamp,
+        last_backup_at: None,
+        last_backup_file_count: None,
     };
     workspaces.push(workspace.clone());
     write_catalog(&app, &workspaces)?;
@@ -816,7 +842,7 @@ pub async fn backup_business_workspace(
     app: AppHandle,
     id: String,
     destination: String,
-) -> Result<String, String> {
+) -> Result<BackupResult, String> {
     let _guard = CATALOG_LOCK.get_or_init(|| Mutex::new(())).lock().await;
     let workspace = read_catalog(&app)?
         .into_iter()
@@ -877,7 +903,19 @@ pub async fn backup_business_workspace(
         let _ = fs::remove_dir_all(&temporary);
         return Err(format!("Could not publish the completed backup: {error}"));
     }
-    Ok(backup.to_string_lossy().to_string())
+    let mut workspaces = read_catalog(&app)?;
+    let catalog_workspace = workspaces
+        .iter_mut()
+        .find(|candidate| candidate.id == id)
+        .ok_or("Business workspace was not found after backup.")?;
+    catalog_workspace.last_backup_at = Some(manifest.created_at);
+    catalog_workspace.last_backup_file_count = Some(manifest.files.len());
+    write_catalog(&app, &workspaces)?;
+    Ok(BackupResult {
+        path: backup.to_string_lossy().to_string(),
+        completed_at: manifest.created_at,
+        file_count: manifest.files.len(),
+    })
 }
 
 #[tauri::command]
@@ -944,6 +982,8 @@ pub async fn restore_business_workspace(
         archived: false,
         created_at: timestamp,
         updated_at: timestamp,
+        last_backup_at: Some(manifest.created_at),
+        last_backup_file_count: Some(manifest.files.len()),
     };
     let mut workspaces = read_catalog(&app)?;
     workspaces.push(workspace.clone());
@@ -957,6 +997,17 @@ pub async fn restore_business_workspace(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_catalog_entries_created_before_backup_health_tracking() {
+        let workspace: BusinessWorkspace = serde_json::from_str(
+            r#"{"id":"business-legacy","name":"Legacy","archived":false,"createdAt":1,"updatedAt":2}"#,
+        )
+        .unwrap();
+
+        assert_eq!(workspace.last_backup_at, None);
+        assert_eq!(workspace.last_backup_file_count, None);
+    }
 
     fn temporary_directory(label: &str) -> PathBuf {
         std::env::temp_dir().join(format!("soletrader-{label}-{}", Uuid::new_v4().simple()))
@@ -995,6 +1046,46 @@ mod tests {
                 10.75
             )
         );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[tokio::test]
+    async fn prevents_supplier_bill_overpayments_and_invalid_reductions() {
+        let directory = temporary_directory("supplier-bill-controls-test");
+        fs::create_dir_all(&directory).unwrap();
+        let database = directory.join("soletrader.db");
+        initialise_database(&database).await.unwrap();
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(SqliteConnectOptions::new().filename(&database))
+            .await
+            .unwrap();
+        let category_id: i64 =
+            sqlx::query_scalar("SELECT id FROM expense_categories ORDER BY id LIMIT 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        sqlx::query("INSERT INTO supplier_bills (id, category_id, supplier, bill_date, due_date, gross_amount, tax_year) VALUES (1, ?, 'Supplier Ltd', '2026-03-01', '2026-03-31', 120, '2025/26')")
+            .bind(category_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO supplier_bill_payments (bill_id, payment_date, amount) VALUES (1, '2026-03-15', 60)")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let overpayment = sqlx::query("INSERT INTO supplier_bill_payments (bill_id, payment_date, amount) VALUES (1, '2026-03-16', 61)")
+            .execute(&pool)
+            .await;
+        let invalid_reduction =
+            sqlx::query("UPDATE supplier_bills SET gross_amount = 59 WHERE id = 1")
+                .execute(&pool)
+                .await;
+
+        pool.close().await;
+        assert!(overpayment.is_err());
+        assert!(invalid_reduction.is_err());
         fs::remove_dir_all(directory).unwrap();
     }
 
@@ -1102,6 +1193,8 @@ mod tests {
             archived: false,
             created_at: 1,
             updated_at: 1,
+            last_backup_at: None,
+            last_backup_file_count: None,
         };
         let directory = workspace_dir_at(&app_data, &workspace.id).unwrap();
         fs::create_dir_all(&directory).unwrap();
